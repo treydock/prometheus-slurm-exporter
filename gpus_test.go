@@ -31,6 +31,6 @@ func TestGPUsMetrics(t *testing.T) {
 	t.Logf("%+v", ParseGPUsMetrics(data))
 }
 
-func TestGPUssGetMetrics(t *testing.T) {
+func TestGPUsGetMetrics(t *testing.T) {
 	t.Logf("%+v", GPUsGetMetrics())
 }
