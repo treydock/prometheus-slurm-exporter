@@ -16,13 +16,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
 	"io/ioutil"
 	"log"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 /*
@@ -237,7 +238,6 @@ func NewSchedulerCollector() *SchedulerCollector {
 			"Information provided by the Slurm sdiag command, number of jobs started thanks to backfilling since last slurm start",
 			nil,
 			nil),
-		total_backfilled_jobs_since_cycle: prometheus.NewDesc(
 			"slurm_scheduler_backfilled_jobs_since_cycle_total",
 			"Information provided by the Slurm sdiag command, number of jobs started thanks to backfilling since last time stats where reset",
 			nil,
