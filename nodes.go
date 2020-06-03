@@ -16,13 +16,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"io/ioutil"
-	"log"
+	"bytes"
+	"context"
 	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type NodesMetrics struct {
@@ -38,8 +42,12 @@ type NodesMetrics struct {
 	resv  float64
 }
 
-func NodesGetMetrics() *NodesMetrics {
-	return ParseNodesMetrics(NodesData())
+func NodesGetMetrics(logger log.Logger) (*NodesMetrics, error) {
+	data, err := NodesData(logger)
+	if err != nil {
+		return &NodesMetrics{}, err
+	}
+	return ParseNodesMetrics(data), nil
 }
 
 func RemoveDuplicates(s []string) []string {
@@ -57,9 +65,9 @@ func RemoveDuplicates(s []string) []string {
 	return t
 }
 
-func ParseNodesMetrics(input []byte) *NodesMetrics {
+func ParseNodesMetrics(input string) *NodesMetrics {
 	var nm NodesMetrics
-	lines := strings.Split(string(input), "\n")
+	lines := strings.Split(input, "\n")
 
 	// Sort and remove all the duplicates from the 'sinfo' output
 	sort.Strings(lines)
@@ -106,20 +114,24 @@ func ParseNodesMetrics(input []byte) *NodesMetrics {
 }
 
 // Execute the squeue command and return its output
-func NodesData() []byte {
-	cmd := exec.Command("sinfo", "-h", "-o %n,%T")
-	stdout, err := cmd.StdoutPipe()
+func NodesData(logger log.Logger) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-o %n,%T")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		if ctx.Err() == context.DeadlineExceeded {
+			level.Error(logger).Log("msg", "Timeout executing sinfo")
+			return "", ctx.Err()
+		} else {
+			level.Error(logger).Log("msg", "Error executing sinfo", "err", stderr.String(), "out", stdout.String())
+			return "", err
+		}
 	}
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-	out, _ := ioutil.ReadAll(stdout)
-	if err := cmd.Wait(); err != nil {
-		log.Fatal(err)
-	}
-	return out
+	return stdout.String(), nil
 }
 
 /*
@@ -128,32 +140,34 @@ func NodesData() []byte {
  * https://godoc.org/github.com/prometheus/client_golang/prometheus#Collector
  */
 
-func NewNodesCollector() *NodesCollector {
+func NewNodesCollector(logger log.Logger) *NodesCollector {
 	return &NodesCollector{
-		alloc: prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
-		comp:  prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
-		down:  prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
-		drain: prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
-		err:   prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
-		fail:  prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
-		idle:  prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
-		maint: prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
-		mix:   prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
-		resv:  prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
+		alloc:  prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
+		comp:   prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
+		down:   prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
+		drain:  prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
+		err:    prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
+		fail:   prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
+		idle:   prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
+		maint:  prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
+		mix:    prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
+		resv:   prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
+		logger: log.With(logger, "collector", "nodes"),
 	}
 }
 
 type NodesCollector struct {
-	alloc *prometheus.Desc
-	comp  *prometheus.Desc
-	down  *prometheus.Desc
-	drain *prometheus.Desc
-	err   *prometheus.Desc
-	fail  *prometheus.Desc
-	idle  *prometheus.Desc
-	maint *prometheus.Desc
-	mix   *prometheus.Desc
-	resv  *prometheus.Desc
+	alloc  *prometheus.Desc
+	comp   *prometheus.Desc
+	down   *prometheus.Desc
+	drain  *prometheus.Desc
+	err    *prometheus.Desc
+	fail   *prometheus.Desc
+	idle   *prometheus.Desc
+	maint  *prometheus.Desc
+	mix    *prometheus.Desc
+	resv   *prometheus.Desc
+	logger log.Logger
 }
 
 // Send all metric descriptions
@@ -170,7 +184,13 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.resv
 }
 func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
-	nm := NodesGetMetrics()
+	var timeout, errorMetric float64
+	nm, err := NodesGetMetrics(nc.logger)
+	if err == context.DeadlineExceeded {
+		timeout = 1
+	} else if err != nil {
+		errorMetric = 1
+	}
 	ch <- prometheus.MustNewConstMetric(nc.alloc, prometheus.GaugeValue, nm.alloc)
 	ch <- prometheus.MustNewConstMetric(nc.comp, prometheus.GaugeValue, nm.comp)
 	ch <- prometheus.MustNewConstMetric(nc.down, prometheus.GaugeValue, nm.down)
@@ -181,4 +201,6 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(nc.maint, prometheus.GaugeValue, nm.maint)
 	ch <- prometheus.MustNewConstMetric(nc.mix, prometheus.GaugeValue, nm.mix)
 	ch <- prometheus.MustNewConstMetric(nc.resv, prometheus.GaugeValue, nm.resv)
+	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "nodes")
+	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "nodes")
 }
