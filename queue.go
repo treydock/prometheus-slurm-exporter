@@ -28,6 +28,7 @@ import (
 )
 
 type QueueMetrics struct {
+	total       float64
 	pending     float64
 	pending_dep float64
 	running     float64
@@ -53,11 +54,12 @@ func QueueGetMetrics(logger log.Logger) (*QueueMetrics, error) {
 
 func ParseQueueMetrics(input string) *QueueMetrics {
 	var qm QueueMetrics
-	lines := strings.Split(input, "\n")
+	lines := strings.Split(string(input), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, ",") {
 			splitted := strings.Split(line, ",")
 			state := splitted[1]
+			qm.total++
 			switch state {
 			case "PENDING":
 				qm.pending++
@@ -111,6 +113,15 @@ func QueueData(logger log.Logger) (string, error) {
 	return stdout.String(), nil
 }
 
+func sliceContains(slice []string, str string) bool {
+	for _, s := range slice {
+		if str == s {
+			return true
+		}
+	}
+	return false
+}
+
 /*
  * Implement the Prometheus Collector interface and feed the
  * Slurm queue metrics into it.
@@ -119,6 +130,7 @@ func QueueData(logger log.Logger) (string, error) {
 
 func NewQueueCollector(logger log.Logger) *QueueCollector {
 	return &QueueCollector{
+		total:       prometheus.NewDesc("slurm_queue_total", "Total jobs in queue", nil, nil),
 		pending:     prometheus.NewDesc("slurm_queue_pending", "Pending jobs in queue", nil, nil),
 		pending_dep: prometheus.NewDesc("slurm_queue_pending_dependency", "Pending jobs because of dependency in queue", nil, nil),
 		running:     prometheus.NewDesc("slurm_queue_running", "Running jobs in the cluster", nil, nil),
@@ -136,6 +148,7 @@ func NewQueueCollector(logger log.Logger) *QueueCollector {
 }
 
 type QueueCollector struct {
+	total       *prometheus.Desc
 	pending     *prometheus.Desc
 	pending_dep *prometheus.Desc
 	running     *prometheus.Desc
@@ -152,6 +165,7 @@ type QueueCollector struct {
 }
 
 func (qc *QueueCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- qc.total
 	ch <- qc.pending
 	ch <- qc.pending_dep
 	ch <- qc.running
@@ -174,6 +188,8 @@ func (qc *QueueCollector) Collect(ch chan<- prometheus.Metric) {
 	} else if err != nil {
 		errorMetric = 1
 	}
+
+	ch <- prometheus.MustNewConstMetric(qc.total, prometheus.GaugeValue, qm.total)
 	ch <- prometheus.MustNewConstMetric(qc.pending, prometheus.GaugeValue, qm.pending)
 	ch <- prometheus.MustNewConstMetric(qc.pending_dep, prometheus.GaugeValue, qm.pending_dep)
 	ch <- prometheus.MustNewConstMetric(qc.running, prometheus.GaugeValue, qm.running)
@@ -188,4 +204,5 @@ func (qc *QueueCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(qc.node_fail, prometheus.GaugeValue, qm.node_fail)
 	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "queue")
 	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "queue")
+
 }
