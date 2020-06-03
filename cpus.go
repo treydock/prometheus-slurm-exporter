@@ -16,12 +16,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"io/ioutil"
-	"log"
+	"bytes"
+	"context"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type CPUsMetrics struct {
@@ -31,13 +35,17 @@ type CPUsMetrics struct {
 	total float64
 }
 
-func CPUsGetMetrics() *CPUsMetrics {
-	return ParseCPUsMetrics(CPUsData())
+func CPUsGetMetrics(logger log.Logger) (*CPUsMetrics, error) {
+	data, err := CPUsData(logger)
+	if err != nil {
+		return &CPUsMetrics{}, err
+	}
+	return ParseCPUsMetrics(data), nil
 }
 
-func ParseCPUsMetrics(input []byte) *CPUsMetrics {
+func ParseCPUsMetrics(input string) *CPUsMetrics {
 	var cm CPUsMetrics
-	if strings.Contains(string(input), "/") {
+	if strings.Contains(input, "/") {
 		splitted := strings.Split(strings.TrimSpace(string(input)), "/")
 		cm.alloc, _ = strconv.ParseFloat(splitted[0], 64)
 		cm.idle, _ = strconv.ParseFloat(splitted[1], 64)
@@ -48,20 +56,24 @@ func ParseCPUsMetrics(input []byte) *CPUsMetrics {
 }
 
 // Execute the sinfo command and return its output
-func CPUsData() []byte {
-	cmd := exec.Command("sinfo", "-h", "-o %C")
-	stdout, err := cmd.StdoutPipe()
+func CPUsData(logger log.Logger) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-o %C")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		if ctx.Err() == context.DeadlineExceeded {
+			level.Error(logger).Log("msg", "Timeout executing sinfo")
+			return "", ctx.Err()
+		} else {
+			level.Error(logger).Log("msg", "Error executing sinfo", "err", stderr.String(), "out", stdout.String())
+			return "", err
+		}
 	}
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-	out, _ := ioutil.ReadAll(stdout)
-	if err := cmd.Wait(); err != nil {
-		log.Fatal(err)
-	}
-	return out
+	return stdout.String(), nil
 }
 
 /*
@@ -70,20 +82,22 @@ func CPUsData() []byte {
  * https://godoc.org/github.com/prometheus/client_golang/prometheus#Collector
  */
 
-func NewCPUsCollector() *CPUsCollector {
+func NewCPUsCollector(logger log.Logger) *CPUsCollector {
 	return &CPUsCollector{
-		alloc: prometheus.NewDesc("slurm_cpus_alloc", "Allocated CPUs", nil, nil),
-		idle:  prometheus.NewDesc("slurm_cpus_idle", "Idle CPUs", nil, nil),
-		other: prometheus.NewDesc("slurm_cpus_other", "Mix CPUs", nil, nil),
-		total: prometheus.NewDesc("slurm_cpus_total", "Total CPUs", nil, nil),
+		alloc:  prometheus.NewDesc("slurm_cpus_alloc", "Allocated CPUs", nil, nil),
+		idle:   prometheus.NewDesc("slurm_cpus_idle", "Idle CPUs", nil, nil),
+		other:  prometheus.NewDesc("slurm_cpus_other", "Mix CPUs", nil, nil),
+		total:  prometheus.NewDesc("slurm_cpus_total", "Total CPUs", nil, nil),
+		logger: log.With(logger, "collector", "cpus"),
 	}
 }
 
 type CPUsCollector struct {
-	alloc *prometheus.Desc
-	idle  *prometheus.Desc
-	other *prometheus.Desc
-	total *prometheus.Desc
+	alloc  *prometheus.Desc
+	idle   *prometheus.Desc
+	other  *prometheus.Desc
+	total  *prometheus.Desc
+	logger log.Logger
 }
 
 // Send all metric descriptions
@@ -94,9 +108,17 @@ func (cc *CPUsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- cc.total
 }
 func (cc *CPUsCollector) Collect(ch chan<- prometheus.Metric) {
-	cm := CPUsGetMetrics()
+	var timeout, errorMetric float64
+	cm, err := CPUsGetMetrics(cc.logger)
+	if err == context.DeadlineExceeded {
+		timeout = 1
+	} else if err != nil {
+		errorMetric = 1
+	}
 	ch <- prometheus.MustNewConstMetric(cc.alloc, prometheus.GaugeValue, cm.alloc)
 	ch <- prometheus.MustNewConstMetric(cc.idle, prometheus.GaugeValue, cm.idle)
 	ch <- prometheus.MustNewConstMetric(cc.other, prometheus.GaugeValue, cm.other)
 	ch <- prometheus.MustNewConstMetric(cc.total, prometheus.GaugeValue, cm.total)
+	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "cpus")
+	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "cpus")
 }

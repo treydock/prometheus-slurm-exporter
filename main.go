@@ -16,32 +16,64 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 package main
 
 import (
-	"flag"
+	"net/http"
+	"os"
+
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/common/log"
-	"net/http"
+	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/promlog/flag"
+	"github.com/prometheus/common/version"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-func init() {
-	// Metrics have to be registered to be exposed
-	prometheus.MustRegister(NewSchedulerCollector()) // from scheduler.go
-	prometheus.MustRegister(NewQueueCollector())     // from queue.go
-	prometheus.MustRegister(NewNodesCollector())     // from nodes.go
-	prometheus.MustRegister(NewCPUsCollector())      // from cpus.go
-    prometheus.MustRegister(NewGPUsCollector())      // from gpus.go
+func metricsHandler(logger log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		registry := prometheus.NewRegistry()
+		// Metrics have to be registered to be exposed
+		registry.MustRegister(NewSchedulerCollector(logger)) // from scheduler.go
+		registry.MustRegister(NewQueueCollector(logger))     // from queue.go
+		registry.MustRegister(NewNodesCollector(logger))     // from nodes.go
+		registry.MustRegister(NewCPUsCollector(logger))      // from cpus.go
+		registry.MustRegister(NewGPUsCollector(logger))      // from gpus.go
+
+		gatherers := prometheus.Gatherers{registry, prometheus.DefaultGatherer}
+		h := promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{})
+		h.ServeHTTP(w, r)
+	}
 }
 
-var listenAddress = flag.String(
-	"listen-address",
-	":8080",
-	"The address to listen on for HTTP requests.")
+var (
+	listenAddress = kingpin.Flag("listen-address",
+		"Address to listen on for web interface and telemetry.").Default(":8080").String()
+	collectorTimeout = kingpin.Flag("collector-timeout",
+		"Time in seconds each collector can run before being timed out").Default("30").Int()
+	collectError = prometheus.NewDesc("slurm_exporter_collect_error",
+		"Indicates if an error has occurred during collection", []string{"collector"}, nil)
+	collecTimeout = prometheus.NewDesc("slurm_exporter_collect_timeout",
+		"Indicates the collector timed out", []string{"collector"}, nil)
+)
 
 func main() {
-	flag.Parse()
+	promlogConfig := &promlog.Config{}
+	flag.AddFlags(kingpin.CommandLine, promlogConfig)
+	kingpin.Version(version.Print("gpfs_exporter"))
+	kingpin.HelpFlag.Short('h')
+	kingpin.Parse()
+
+	logger := promlog.New(promlogConfig)
+	level.Info(logger).Log("msg", "Starting slurm exporter", "version", version.Info())
+	level.Info(logger).Log("msg", "Build context", "build_context", version.BuildContext())
+	level.Info(logger).Log("msg", "Starting Server", "address", *listenAddress)
+
 	// The Handler function provides a default handler to expose metrics
 	// via an HTTP server. "/metrics" is the usual endpoint for that.
-	log.Infof("Starting Server: %s", *listenAddress)
-	http.Handle("/metrics", promhttp.Handler())
-	log.Fatal(http.ListenAndServe(*listenAddress, nil))
+	http.Handle("/metrics", metricsHandler(logger))
+	err := http.ListenAndServe(*listenAddress, nil)
+	if err != nil {
+		level.Error(logger).Log("err", err)
+		os.Exit(1)
+	}
 }

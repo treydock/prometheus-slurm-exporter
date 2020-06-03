@@ -16,11 +16,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"io/ioutil"
-	"log"
+	"bytes"
+	"context"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type QueueMetrics struct {
@@ -39,13 +43,17 @@ type QueueMetrics struct {
 }
 
 // Returns the scheduler metrics
-func QueueGetMetrics() *QueueMetrics {
-	return ParseQueueMetrics(QueueData())
+func QueueGetMetrics(logger log.Logger) (*QueueMetrics, error) {
+	data, err := QueueData(logger)
+	if err != nil {
+		return &QueueMetrics{}, err
+	}
+	return ParseQueueMetrics(data), nil
 }
 
-func ParseQueueMetrics(input []byte) *QueueMetrics {
+func ParseQueueMetrics(input string) *QueueMetrics {
 	var qm QueueMetrics
-	lines := strings.Split(string(input), "\n")
+	lines := strings.Split(input, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, ",") {
 			splitted := strings.Split(line, ",")
@@ -83,20 +91,24 @@ func ParseQueueMetrics(input []byte) *QueueMetrics {
 }
 
 // Execute the squeue command and return its output
-func QueueData() []byte {
-	cmd := exec.Command("squeue", "-a", "-r", "-h", "-o %A,%T,%r", "--states=all")
-	stdout, err := cmd.StdoutPipe()
+func QueueData(logger log.Logger) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "squeue", "-a", "-r", "-h", "-o %A,%T,%r", "--states=all")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		if ctx.Err() == context.DeadlineExceeded {
+			level.Error(logger).Log("msg", "Timeout executing squeue")
+			return "", ctx.Err()
+		} else {
+			level.Error(logger).Log("msg", "Error executing squeue", "err", stderr.String(), "out", stdout.String())
+			return "", err
+		}
 	}
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-	out, _ := ioutil.ReadAll(stdout)
-	if err := cmd.Wait(); err != nil {
-		log.Fatal(err)
-	}
-	return out
+	return stdout.String(), nil
 }
 
 /*
@@ -105,7 +117,7 @@ func QueueData() []byte {
  * https://godoc.org/github.com/prometheus/client_golang/prometheus#Collector
  */
 
-func NewQueueCollector() *QueueCollector {
+func NewQueueCollector(logger log.Logger) *QueueCollector {
 	return &QueueCollector{
 		pending:     prometheus.NewDesc("slurm_queue_pending", "Pending jobs in queue", nil, nil),
 		pending_dep: prometheus.NewDesc("slurm_queue_pending_dependency", "Pending jobs because of dependency in queue", nil, nil),
@@ -119,6 +131,7 @@ func NewQueueCollector() *QueueCollector {
 		timeout:     prometheus.NewDesc("slurm_queue_timeout", "Jobs stopped by timeout", nil, nil),
 		preempted:   prometheus.NewDesc("slurm_queue_preempted", "Number of preempted jobs", nil, nil),
 		node_fail:   prometheus.NewDesc("slurm_queue_node_fail", "Number of jobs stopped due to node fail", nil, nil),
+		logger:      log.With(logger, "collector", "queue"),
 	}
 }
 
@@ -135,6 +148,7 @@ type QueueCollector struct {
 	timeout     *prometheus.Desc
 	preempted   *prometheus.Desc
 	node_fail   *prometheus.Desc
+	logger      log.Logger
 }
 
 func (qc *QueueCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -153,7 +167,13 @@ func (qc *QueueCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (qc *QueueCollector) Collect(ch chan<- prometheus.Metric) {
-	qm := QueueGetMetrics()
+	var timeout, errorMetric float64
+	qm, err := QueueGetMetrics(qc.logger)
+	if err == context.DeadlineExceeded {
+		timeout = 1
+	} else if err != nil {
+		errorMetric = 1
+	}
 	ch <- prometheus.MustNewConstMetric(qc.pending, prometheus.GaugeValue, qm.pending)
 	ch <- prometheus.MustNewConstMetric(qc.pending_dep, prometheus.GaugeValue, qm.pending_dep)
 	ch <- prometheus.MustNewConstMetric(qc.running, prometheus.GaugeValue, qm.running)
@@ -166,4 +186,6 @@ func (qc *QueueCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(qc.timeout, prometheus.GaugeValue, qm.timeout)
 	ch <- prometheus.MustNewConstMetric(qc.preempted, prometheus.GaugeValue, qm.preempted)
 	ch <- prometheus.MustNewConstMetric(qc.node_fail, prometheus.GaugeValue, qm.node_fail)
+	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "queue")
+	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "queue")
 }

@@ -19,6 +19,9 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/go-kit/kit/log"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 func TestSchedulerMetrics(t *testing.T) {
@@ -28,9 +31,17 @@ func TestSchedulerMetrics(t *testing.T) {
 		t.Fatalf("Can not open test data: %v", err)
 	}
 	data, err := ioutil.ReadAll(file)
-	t.Logf("%+v", ParseSchedulerMetrics(data))
+	t.Logf("%+v", ParseSchedulerMetrics(string(data)))
 }
 
 func TestSchedulerGetMetrics(t *testing.T) {
-	t.Logf("%+v", SchedulerGetMetrics())
+	if _, err := kingpin.CommandLine.Parse([]string{}); err != nil {
+		t.Fatal(err)
+	}
+	timeout := 10
+	collectorTimeout = &timeout
+	w := log.NewSyncWriter(os.Stderr)
+	logger := log.NewLogfmtLogger(w)
+	data, _ := SchedulerGetMetrics(logger)
+	t.Logf("%+v", data)
 }

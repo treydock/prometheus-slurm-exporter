@@ -19,13 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 package main
 
 import (
-	"io/ioutil"
-	"log"
+	"bytes"
+	"context"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -37,8 +40,12 @@ type GPUsMetrics struct {
 	total float64
 }
 
-func GPUsGetMetrics() *GPUsMetrics {
-	return ParseGPUsMetrics(GPUsData())
+func GPUsGetMetrics(logger log.Logger) (*GPUsMetrics, error) {
+	data, err := GPUsData(logger)
+	if err != nil {
+		return &GPUsMetrics{}, err
+	}
+	return ParseGPUsMetrics(data), nil
 }
 
 func parseGRES(line string) float64 {
@@ -63,11 +70,11 @@ func parseGRES(line string) float64 {
 	return value
 }
 
-func ParseGPUsMetrics(input []byte) *GPUsMetrics {
+func ParseGPUsMetrics(input string) *GPUsMetrics {
 	var gm GPUsMetrics
 	seen := make(map[string]bool)
 
-	lines := strings.Split(string(input), "\n")
+	lines := strings.Split(input, "\n")
 	for _, line := range lines {
 		data := strings.Fields(line)
 		if len(data) != 3 {
@@ -97,34 +104,40 @@ func ParseGPUsMetrics(input []byte) *GPUsMetrics {
 // Execute the sinfo command to list all nodes and their associated GRES
 // information. Note: nodes can be in more than one partition so need to dedup
 // the output of sinof by nodehost.
-func GPUsData() []byte {
-	cmd := exec.Command("sinfo", "-h", "--Node", "--Format=nodehost,gres,gresused")
-	stdout, err := cmd.StdoutPipe()
+func GPUsData(logger log.Logger) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sinfo", "-h", "--Node", "--Format=nodehost,gres,gresused")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		if ctx.Err() == context.DeadlineExceeded {
+			level.Error(logger).Log("msg", "Timeout executing sinfo")
+			return "", ctx.Err()
+		} else {
+			level.Error(logger).Log("msg", "Error executing sinfo", "err", stderr.String(), "out", stdout.String())
+			return "", err
+		}
 	}
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-	out, _ := ioutil.ReadAll(stdout)
-	if err := cmd.Wait(); err != nil {
-		log.Fatal(err)
-	}
-	return out
+	return stdout.String(), nil
 }
 
-func NewGPUsCollector() *GPUsCollector {
+func NewGPUsCollector(logger log.Logger) *GPUsCollector {
 	return &GPUsCollector{
-		alloc: prometheus.NewDesc("slurm_gpus_alloc", "Allocated GPUs", nil, nil),
-		idle:  prometheus.NewDesc("slurm_gpus_idle", "Idle GPUs", nil, nil),
-		total: prometheus.NewDesc("slurm_gpus_total", "Total GPUs", nil, nil),
+		alloc:  prometheus.NewDesc("slurm_gpus_alloc", "Allocated GPUs", nil, nil),
+		idle:   prometheus.NewDesc("slurm_gpus_idle", "Idle GPUs", nil, nil),
+		total:  prometheus.NewDesc("slurm_gpus_total", "Total GPUs", nil, nil),
+		logger: log.With(logger, "collector", "gpus"),
 	}
 }
 
 type GPUsCollector struct {
-	alloc *prometheus.Desc
-	idle  *prometheus.Desc
-	total *prometheus.Desc
+	alloc  *prometheus.Desc
+	idle   *prometheus.Desc
+	total  *prometheus.Desc
+	logger log.Logger
 }
 
 func (cc *GPUsCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -133,8 +146,16 @@ func (cc *GPUsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- cc.total
 }
 func (cc *GPUsCollector) Collect(ch chan<- prometheus.Metric) {
-	cm := GPUsGetMetrics()
+	var timeout, errorMetric float64
+	cm, err := GPUsGetMetrics(cc.logger)
+	if err == context.DeadlineExceeded {
+		timeout = 1
+	} else if err != nil {
+		errorMetric = 1
+	}
 	ch <- prometheus.MustNewConstMetric(cc.alloc, prometheus.GaugeValue, cm.alloc)
 	ch <- prometheus.MustNewConstMetric(cc.idle, prometheus.GaugeValue, cm.idle)
 	ch <- prometheus.MustNewConstMetric(cc.total, prometheus.GaugeValue, cm.total)
+	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "gpus")
+	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "gpus")
 }
