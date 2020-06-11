@@ -1,37 +1,69 @@
 *******************************************************
-sdiag output at Wed Apr 12 11:04:01 2017
-Data since      Wed Apr 12 02:00:00 2017
+sdiag output at Thu Jun 11 09:45:51 2020 (1591883151)
+Data since      Wed Jun 10 20:00:00 2020 (1591833600)
 *******************************************************
-Server thread count: 3
-Agent queue size:    0
+Server thread count:  3
+Agent queue size:     0
+Agent count:          0
+Agent thread count:   0
+DBD Agent queue size: 0
 
-Jobs submitted: 9706
-Jobs started:   35395
-Jobs completed: 31254
-Jobs canceled:  2835
+Jobs submitted: 0
+Jobs started:   0
+Jobs completed: 0
+Jobs canceled:  0
 Jobs failed:    0
 
+Job states ts:  Thu Jun 11 09:45:42 2020 (1591883142)
+Jobs pending:   0
+Jobs running:   0
+
 Main schedule statistics (microseconds):
-        Last cycle:   97209
-        Max cycle:    1407590
-        Total cycles: 34585
-        Mean cycle:   74593
-        Mean depth cycle:  103
-        Cycles per minute: 63
-        Last queue length: 57011
+        Last cycle:   40
+        Max cycle:    84
+        Total cycles: 826
+        Mean cycle:   14
+        Mean depth cycle:  0
+        Cycles per minute: 1
+        Last queue length: 0
 
 Backfilling stats
-        Total backfilled jobs (since last slurm start): 111544
-        Total backfilled jobs (since last stats cycle start): 793
-        Total backfilled heterogeneous job components: 10
-        Total cycles: 529
-        Last cycle when: Wed Apr 12 11:03:21 2017
-        Last cycle: 1942890
-        Max cycle:  5933334
-        Mean cycle: 1960820
-        Last depth cycle: 56
-        Last depth cycle (try sched): 56
-        Depth Mean: 29324
-        Depth Mean (try depth): 1659
-        Last queue length: 57064
-        Queue length mean: 40772
+        Total backfilled jobs (since last slurm start): 239
+        Total backfilled jobs (since last stats cycle start): 0
+        Total backfilled heterogeneous job components: 0
+        Total cycles: 0
+        Last cycle when: Thu Jun 04 12:13:16 2020 (1591287196)
+        Last cycle: 0
+        Max cycle:  0
+        Last depth cycle: 0
+        Last depth cycle (try sched): 0
+        Last queue length: 0
+        Last table size: 1
+
+Latency for 1000 calls to gettimeofday(): 25 microseconds
+
+Remote Procedure Call statistics by message type
+        REQUEST_PARTITION_INFO                  ( 2009) count:83026  ave_time:352    total_time:29259362
+        REQUEST_NODE_INFO                       ( 2007) count:66396  ave_time:427    total_time:28389304
+        REQUEST_JOB_INFO                        ( 2003) count:16630  ave_time:2066   total_time:34373055
+        REQUEST_STATS_INFO                      ( 2035) count:16599  ave_time:344    total_time:5724957
+        ACCOUNTING_UPDATE_MSG                   (10001) count:11592  ave_time:3575064 total_time:41442149799
+        MESSAGE_NODE_REGISTRATION_STATUS        ( 1002) count:2299   ave_time:369    total_time:849466
+        REQUEST_CONFIG                          ( 2015) count:470    ave_time:233    total_time:109832
+        REQUEST_STEP_COMPLETE                   ( 5016) count:291    ave_time:306    total_time:89188
+        REQUEST_COMPLETE_BATCH_SCRIPT           ( 5018) count:291    ave_time:297    total_time:86550
+        MESSAGE_EPILOG_COMPLETE                 ( 6012) count:291    ave_time:85     total_time:24831
+        REQUEST_COMPLETE_PROLOG                 ( 6018) count:291    ave_time:22968  total_time:6683938
+        REQUEST_SUBMIT_BATCH_JOB                ( 4003) count:12     ave_time:2450   total_time:29401
+        REQUEST_KILL_JOB                        ( 5032) count:1      ave_time:993    total_time:993
+        REQUEST_RECONFIGURE                     ( 1003) count:1      ave_time:79156  total_time:79156
+        REQUEST_RESERVATION_INFO                ( 2024) count:1      ave_time:214    total_time:214
+
+Remote Procedure Call statistics by user
+        prometheus      (      94) count:182435 ave_time:535    total_time:97672425
+        slurm           (      93) count:11592  ave_time:3575064 total_time:41442149799
+        root            (       0) count:4093   ave_time:1949   total_time:7981256
+        tdockendorf     (   20821) count:71     ave_time:655    total_time:46566
+
+Pending RPC statistics
+        No pending RPCs

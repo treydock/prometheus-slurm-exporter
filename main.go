@@ -29,6 +29,10 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+const (
+	namespace = "slurm"
+)
+
 func metricsHandler(logger log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		registry := prometheus.NewRegistry()
