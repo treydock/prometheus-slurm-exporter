@@ -1,0 +1,75 @@
+*******************************************************************
+sacctmgr show stats output at Wed Jul 22 11:00:54 2020 (1595430054)
+Data since                    Tue Jul 21 08:42:39 2020 (1595335359)
+All statistics are in microseconds
+*******************************************************************
+
+Internal DBD rollup last ran Wed Jul 22 11:00:00 2020 (1595430000)
+        Last cycle:   18617
+        Max cycle:    35768
+        Total time:   551977
+        Total cycles: 28
+        Mean cycle:   19713
+
+Cluster 'owens' rollup statistics
+Hour  last ran Wed Jul 22 11:00:00 2020 (1595430000)
+        Last cycle:   2462
+        Max cycle:    7437
+        Total time:   102155
+        Total cycles: 27
+        Mean cycle:   3783
+Day   last ran Wed Jul 22 00:00:00 2020 (1595390400)
+        Last cycle:   1953
+        Max cycle:    1953
+        Total time:   1953
+        Total cycles: 1
+        Mean cycle:   1953
+
+Cluster 'pitzer' rollup statistics
+Hour  last ran Wed Jul 22 11:00:00 2020 (1595430000)
+        Last cycle:   13991
+        Max cycle:    17498
+        Total time:   246721
+        Total cycles: 27
+        Mean cycle:   9137
+Day   last ran Wed Jul 22 00:00:00 2020 (1595390400)
+        Last cycle:   1966
+        Max cycle:    1966
+        Total time:   1966
+        Total cycles: 1
+        Mean cycle:   1966
+
+Remote Procedure Call statistics by message type
+        DBD_GET_USERS            ( 1415) count:14     ave_time:18309420 total_time:256331887
+        DBD_GET_ASSOCS           ( 1410) count:22     ave_time:621118 total_time:13664611
+        DBD_SEND_MULT_MSG        ( 1474) count:749    ave_time:15172  total_time:11364235
+        DBD_GET_ACCOUNTS         ( 1409) count:9      ave_time:1011123 total_time:9100113
+        DBD_GET_RESVS            ( 1464) count:17     ave_time:248334 total_time:4221694
+        DBD_NODE_STATE           ( 1432) count:3642   ave_time:1046   total_time:3811610
+        DBD_STEP_COMPLETE        ( 1441) count:2619   ave_time:1336   total_time:3500424
+        DBD_STEP_START           ( 1442) count:2619   ave_time:1052   total_time:2756949
+        DBD_JOB_COMPLETE         ( 1424) count:1634   ave_time:1115   total_time:1822094
+        DBD_JOB_START            ( 1425) count:1218   ave_time:1147   total_time:1397527
+        DBD_SEND_MULT_JOB_START  ( 1472) count:81     ave_time:9859   total_time:798587
+        SLURM_PERSIST_INIT       ( 6500) count:175    ave_time:3634   total_time:636117
+        DBD_CLUSTER_TRES         ( 1407) count:319    ave_time:1377   total_time:439324
+        DBD_GET_JOBS_COND        ( 1444) count:30     ave_time:9134   total_time:274032
+        DBD_FINI                 ( 1401) count:294    ave_time:487    total_time:143315
+        DBD_GET_QOS              ( 1448) count:79     ave_time:826    total_time:65292
+        DBD_GET_TRES             ( 1486) count:79     ave_time:582    total_time:46031
+        DBD_ADD_RESV             ( 1461) count:2      ave_time:15862  total_time:31724
+        DBD_GET_CLUSTERS         ( 1412) count:9      ave_time:3310   total_time:29798
+        DBD_REGISTER_CTLD        ( 1434) count:5      ave_time:4225   total_time:21126
+        DBD_GET_RES              ( 1478) count:5      ave_time:2423   total_time:12116
+        DBD_MODIFY_ASSOCS        ( 1429) count:2      ave_time:5544   total_time:11089
+        DBD_GET_FEDERATIONS      ( 1494) count:5      ave_time:1303   total_time:6518
+        DBD_GET_STATS            ( 1489) count:57     ave_time:49     total_time:2822
+        DBD_REMOVE_QOS           ( 1450) count:1      ave_time:2173   total_time:2173
+        DBD_MODIFY_QOS           ( 1451) count:1      ave_time:1025   total_time:1025
+        DBD_ADD_QOS              ( 1447) count:1      ave_time:986    total_time:986
+
+Remote Procedure Call statistics by user
+        slurm               (        93) count:12924  ave_time:20216  total_time:261279595
+        root                (         0) count:513    ave_time:86617  total_time:44434551
+        troy                (      6624) count:228    ave_time:20853  total_time:4754537
+        tdockendorf         (     20821) count:23     ave_time:1066   total_time:24536

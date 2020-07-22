@@ -38,10 +38,13 @@ func metricsHandler(logger log.Logger) http.HandlerFunc {
 		registry := prometheus.NewRegistry()
 		// Metrics have to be registered to be exposed
 		registry.MustRegister(NewSchedulerCollector(logger)) // from scheduler.go
-		registry.MustRegister(NewQueueCollector(logger))     // from queue.go
-		registry.MustRegister(NewNodesCollector(logger))     // from nodes.go
-		registry.MustRegister(NewCPUsCollector(logger))      // from cpus.go
-		registry.MustRegister(NewGPUsCollector(logger))      // from gpus.go
+		if *slurmdbEnable {
+			registry.MustRegister(NewSlurmdbdCollector(logger)) // from slurmdbd.go
+		}
+		registry.MustRegister(NewQueueCollector(logger)) // from queue.go
+		registry.MustRegister(NewNodesCollector(logger)) // from nodes.go
+		registry.MustRegister(NewCPUsCollector(logger))  // from cpus.go
+		registry.MustRegister(NewGPUsCollector(logger))  // from gpus.go
 
 		gatherers := prometheus.Gatherers{registry, prometheus.DefaultGatherer}
 		h := promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{})
