@@ -113,15 +113,6 @@ func QueueData(logger log.Logger) (string, error) {
 	return stdout.String(), nil
 }
 
-func sliceContains(slice []string, str string) bool {
-	for _, s := range slice {
-		if str == s {
-			return true
-		}
-	}
-	return false
-}
-
 /*
  * Implement the Prometheus Collector interface and feed the
  * Slurm queue metrics into it.
