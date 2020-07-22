@@ -30,16 +30,19 @@ import (
 )
 
 type NodesMetrics struct {
-	alloc float64
-	comp  float64
-	down  float64
-	drain float64
-	err   float64
-	fail  float64
-	idle  float64
-	maint float64
-	mix   float64
-	resv  float64
+	alloc     float64
+	comp      float64
+	down      float64
+	drain     float64
+	err       float64
+	fail      float64
+	idle      float64
+	maint     float64
+	mix       float64
+	resv      float64
+	unknown   float64
+	nodeState map[string]string
+	nodeDown  map[string]float64
 }
 
 func NodesGetMetrics(logger log.Logger) (*NodesMetrics, error) {
@@ -67,6 +70,8 @@ func RemoveDuplicates(s []string) []string {
 
 func ParseNodesMetrics(input string) *NodesMetrics {
 	var nm NodesMetrics
+	nodeState := make(map[string]string)
+	nodeDown := make(map[string]float64)
 	lines := strings.Split(input, "\n")
 
 	// Sort and remove all the duplicates from the 'sinfo' output
@@ -75,7 +80,10 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 
 	for _, line := range lines_uniq {
 		if strings.Contains(line, ",") {
-			state := strings.Split(line, ",")[1]
+			items := strings.Split(line, ",")
+			node := items[0]
+			state := items[1]
+			nodeState[node] = strings.Trim(state, "*")
 			alloc := regexp.MustCompile(`^alloc`)
 			comp := regexp.MustCompile(`^comp`)
 			down := regexp.MustCompile(`^down`)
@@ -86,6 +94,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			maint := regexp.MustCompile(`^maint`)
 			mix := regexp.MustCompile(`^mix`)
 			resv := regexp.MustCompile(`^res`)
+			unknown := regexp.MustCompile(`^unknown`)
 			switch {
 			case alloc.MatchString(state) == true:
 				nm.alloc++
@@ -107,17 +116,26 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 				nm.mix++
 			case resv.MatchString(state) == true:
 				nm.resv++
+			case unknown.MatchString(state):
+				nm.unknown++
+			}
+			if strings.HasSuffix(state, "*") || down.MatchString(state) {
+				nodeDown[node] = 1
+			} else {
+				nodeDown[node] = 0
 			}
 		}
 	}
+	nm.nodeState = nodeState
+	nm.nodeDown = nodeDown
 	return &nm
 }
 
-// Execute the squeue command and return its output
+// Execute the sinfo command and return its output
 func NodesData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-o %n,%T")
+	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-N", "-o", "%N,%T")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -132,6 +150,7 @@ func NodesData(logger log.Logger) (string, error) {
 		}
 	}
 	return stdout.String(), nil
+
 }
 
 /*
@@ -142,32 +161,38 @@ func NodesData(logger log.Logger) (string, error) {
 
 func NewNodesCollector(logger log.Logger) *NodesCollector {
 	return &NodesCollector{
-		alloc:  prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
-		comp:   prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
-		down:   prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
-		drain:  prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
-		err:    prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
-		fail:   prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
-		idle:   prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
-		maint:  prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
-		mix:    prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
-		resv:   prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
-		logger: log.With(logger, "collector", "nodes"),
+		alloc:     prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
+		comp:      prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
+		down:      prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
+		drain:     prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
+		err:       prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
+		fail:      prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
+		idle:      prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
+		maint:     prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
+		mix:       prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
+		resv:      prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
+		unknown:   prometheus.NewDesc("slurm_nodes_unknown", "Unknown state nodes", nil, nil),
+		nodeState: prometheus.NewDesc("slurm_node_state_info", "Node state", []string{"node", "state"}, nil),
+		nodeDown:  prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node"}, nil),
+		logger:    log.With(logger, "collector", "nodes"),
 	}
 }
 
 type NodesCollector struct {
-	alloc  *prometheus.Desc
-	comp   *prometheus.Desc
-	down   *prometheus.Desc
-	drain  *prometheus.Desc
-	err    *prometheus.Desc
-	fail   *prometheus.Desc
-	idle   *prometheus.Desc
-	maint  *prometheus.Desc
-	mix    *prometheus.Desc
-	resv   *prometheus.Desc
-	logger log.Logger
+	alloc     *prometheus.Desc
+	comp      *prometheus.Desc
+	down      *prometheus.Desc
+	drain     *prometheus.Desc
+	err       *prometheus.Desc
+	fail      *prometheus.Desc
+	idle      *prometheus.Desc
+	maint     *prometheus.Desc
+	mix       *prometheus.Desc
+	resv      *prometheus.Desc
+	unknown   *prometheus.Desc
+	nodeState *prometheus.Desc
+	nodeDown  *prometheus.Desc
+	logger    log.Logger
 }
 
 // Send all metric descriptions
@@ -182,6 +207,9 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.maint
 	ch <- nc.mix
 	ch <- nc.resv
+	ch <- nc.unknown
+	ch <- nc.nodeState
+	ch <- nc.nodeDown
 }
 func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	var timeout, errorMetric float64
@@ -201,6 +229,13 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(nc.maint, prometheus.GaugeValue, nm.maint)
 	ch <- prometheus.MustNewConstMetric(nc.mix, prometheus.GaugeValue, nm.mix)
 	ch <- prometheus.MustNewConstMetric(nc.resv, prometheus.GaugeValue, nm.resv)
+	ch <- prometheus.MustNewConstMetric(nc.unknown, prometheus.GaugeValue, nm.unknown)
+	for node, state := range nm.nodeState {
+		ch <- prometheus.MustNewConstMetric(nc.nodeState, prometheus.GaugeValue, 1, node, state)
+	}
+	for node, down := range nm.nodeDown {
+		ch <- prometheus.MustNewConstMetric(nc.nodeDown, prometheus.GaugeValue, down, node)
+	}
 	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "nodes")
 	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "nodes")
 }

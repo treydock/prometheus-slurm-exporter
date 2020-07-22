@@ -55,6 +55,8 @@ func metricsHandler(logger log.Logger) http.HandlerFunc {
 var (
 	listenAddress = kingpin.Flag("listen-address",
 		"Address to listen on for web interface and telemetry.").Default(":8080").String()
+	ignorePartitions = kingpin.Flag("collector.ignore-partitions",
+		"Comma separated list of partitions to ignore").Default("").String()
 	collectorTimeout = kingpin.Flag("collector-timeout",
 		"Time in seconds each collector can run before being timed out").Default("30").Int()
 	collectError = prometheus.NewDesc("slurm_exporter_collect_error",
@@ -62,6 +64,15 @@ var (
 	collecTimeout = prometheus.NewDesc("slurm_exporter_collect_timeout",
 		"Indicates the collector timed out", []string{"collector"}, nil)
 )
+
+func sliceContains(slice []string, str string) bool {
+	for _, s := range slice {
+		if str == s {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	promlogConfig := &promlog.Config{}
