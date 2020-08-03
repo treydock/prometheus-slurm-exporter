@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -30,9 +31,12 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var gpuGresPattern = regexp.MustCompile(`^gpu\:([^\:]+)\:?(\d+)?`)
+var gpuGresLength = kingpin.Flag("collector.gpus.gres-length",
+	"Length of GRES string to query").Default("100").Int()
 
 type GPUsMetrics struct {
 	alloc float64
@@ -107,7 +111,8 @@ func ParseGPUsMetrics(input string) *GPUsMetrics {
 func GPUsData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sinfo", "-h", "--Node", "--Format=nodehost,gres,gresused")
+	format := fmt.Sprintf("--Format=nodehost,gres:%d,gresused:%d", *gpuGresLength, *gpuGresLength)
+	cmd := exec.CommandContext(ctx, "sinfo", "-h", "--Node", format)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
