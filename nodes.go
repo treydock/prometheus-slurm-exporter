@@ -50,6 +50,7 @@ type NodesMetrics struct {
 	nodeState    map[string]string
 	nodeDown     map[string]float64
 	nodeFeatures map[string]string
+	allFeatures  []string
 }
 
 func NodesGetMetrics(logger log.Logger) (*NodesMetrics, error) {
@@ -81,6 +82,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 	nodeState := make(map[string]string)
 	nodeDown := make(map[string]float64)
 	nodeFeatures := make(map[string]string)
+	allFeatures := []string{}
 	lines := strings.Split(input, "\n")
 
 	// Sort and remove all the duplicates from the 'sinfo' output
@@ -141,6 +143,9 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			for _, feature := range features {
 				if !ignoreFeatures.MatchString(feature) {
 					keepFeatures = append(keepFeatures, feature)
+					if !sliceContains(allFeatures, feature) {
+						allFeatures = append(allFeatures, feature)
+					}
 				}
 			}
 			nodeFeatures[node] = strings.Join(keepFeatures, ",")
@@ -149,6 +154,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 	nm.nodeState = nodeState
 	nm.nodeDown = nodeDown
 	nm.nodeFeatures = nodeFeatures
+	nm.allFeatures = allFeatures
 	return &nm
 }
 
@@ -196,6 +202,7 @@ func NewNodesCollector(logger log.Logger) *NodesCollector {
 		nodeState:    prometheus.NewDesc("slurm_node_state_info", "Node state", []string{"node", "state"}, nil),
 		nodeDown:     prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node"}, nil),
 		nodeFeatures: prometheus.NewDesc("slurm_node_features_info", "Node features", []string{"node", "features"}, nil),
+		feature:      prometheus.NewDesc("slurm_node_feature", "Node feature", []string{"feature"}, nil),
 		logger:       log.With(logger, "collector", "nodes"),
 	}
 }
@@ -215,6 +222,7 @@ type NodesCollector struct {
 	nodeState    *prometheus.Desc
 	nodeDown     *prometheus.Desc
 	nodeFeatures *prometheus.Desc
+	feature      *prometheus.Desc
 	logger       log.Logger
 }
 
@@ -234,6 +242,7 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.nodeState
 	ch <- nc.nodeDown
 	ch <- nc.nodeFeatures
+	ch <- nc.feature
 }
 func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	var timeout, errorMetric float64
@@ -262,6 +271,9 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	for node, features := range nm.nodeFeatures {
 		ch <- prometheus.MustNewConstMetric(nc.nodeFeatures, prometheus.GaugeValue, 1, node, features)
+	}
+	for _, feature := range nm.allFeatures {
+		ch <- prometheus.MustNewConstMetric(nc.feature, prometheus.GaugeValue, 1, feature)
 	}
 	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "nodes")
 	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "nodes")
