@@ -45,6 +45,9 @@ func metricsHandler(logger log.Logger) http.HandlerFunc {
 		registry.MustRegister(NewNodesCollector(logger)) // from nodes.go
 		registry.MustRegister(NewCPUsCollector(logger))  // from cpus.go
 		registry.MustRegister(NewGPUsCollector(logger))  // from gpus.go
+		if *partitionEnable {
+			registry.MustRegister(NewPartitionCollector(logger)) // from partition.go
+		}
 
 		gatherers := prometheus.Gatherers{registry, prometheus.DefaultGatherer}
 		h := promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{})
@@ -55,8 +58,6 @@ func metricsHandler(logger log.Logger) http.HandlerFunc {
 var (
 	listenAddress = kingpin.Flag("listen-address",
 		"Address to listen on for web interface and telemetry.").Default(":8080").String()
-	ignorePartitions = kingpin.Flag("collector.ignore-partitions",
-		"Comma separated list of partitions to ignore").Default("").String()
 	collectorTimeout = kingpin.Flag("collector-timeout",
 		"Time in seconds each collector can run before being timed out").Default("30").Int()
 	collectError = prometheus.NewDesc("slurm_exporter_collect_error",
