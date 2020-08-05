@@ -27,22 +27,29 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/alecthomas/kingpin.v2"
+)
+
+var (
+	ignoreNodeFeatures = kingpin.Flag("collector.node.ignore-features",
+		"Regular expression of node features to ignore").Default("^$").String()
 )
 
 type NodesMetrics struct {
-	alloc     float64
-	comp      float64
-	down      float64
-	drain     float64
-	err       float64
-	fail      float64
-	idle      float64
-	maint     float64
-	mix       float64
-	resv      float64
-	unknown   float64
-	nodeState map[string]string
-	nodeDown  map[string]float64
+	alloc        float64
+	comp         float64
+	down         float64
+	drain        float64
+	err          float64
+	fail         float64
+	idle         float64
+	maint        float64
+	mix          float64
+	resv         float64
+	unknown      float64
+	nodeState    map[string]string
+	nodeDown     map[string]float64
+	nodeFeatures map[string]string
 }
 
 func NodesGetMetrics(logger log.Logger) (*NodesMetrics, error) {
@@ -70,8 +77,10 @@ func RemoveDuplicates(s []string) []string {
 
 func ParseNodesMetrics(input string) *NodesMetrics {
 	var nm NodesMetrics
+	ignoreFeatures := regexp.MustCompile(*ignoreNodeFeatures)
 	nodeState := make(map[string]string)
 	nodeDown := make(map[string]float64)
+	nodeFeatures := make(map[string]string)
 	lines := strings.Split(input, "\n")
 
 	// Sort and remove all the duplicates from the 'sinfo' output
@@ -79,10 +88,15 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 	lines_uniq := RemoveDuplicates(lines)
 
 	for _, line := range lines_uniq {
-		if strings.Contains(line, ",") {
-			items := strings.Split(line, ",")
+		if strings.Contains(line, "|") {
+			items := strings.Split(line, "|")
+			if len(items) != 3 {
+				continue
+			}
 			node := items[0]
 			state := items[1]
+			features := strings.Split(strings.TrimSpace(items[2]), ",")
+			keepFeatures := []string{}
 			nodeState[node] = strings.Trim(state, "*")
 			alloc := regexp.MustCompile(`^alloc`)
 			comp := regexp.MustCompile(`^comp`)
@@ -124,10 +138,17 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			} else {
 				nodeDown[node] = 0
 			}
+			for _, feature := range features {
+				if !ignoreFeatures.MatchString(feature) {
+					keepFeatures = append(keepFeatures, feature)
+				}
+			}
+			nodeFeatures[node] = strings.Join(keepFeatures, ",")
 		}
 	}
 	nm.nodeState = nodeState
 	nm.nodeDown = nodeDown
+	nm.nodeFeatures = nodeFeatures
 	return &nm
 }
 
@@ -135,7 +156,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 func NodesData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-N", "-o", "%N,%T")
+	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-N", "-o", "%N|%T|%f")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -161,38 +182,40 @@ func NodesData(logger log.Logger) (string, error) {
 
 func NewNodesCollector(logger log.Logger) *NodesCollector {
 	return &NodesCollector{
-		alloc:     prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
-		comp:      prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
-		down:      prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
-		drain:     prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
-		err:       prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
-		fail:      prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
-		idle:      prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
-		maint:     prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
-		mix:       prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
-		resv:      prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
-		unknown:   prometheus.NewDesc("slurm_nodes_unknown", "Unknown state nodes", nil, nil),
-		nodeState: prometheus.NewDesc("slurm_node_state_info", "Node state", []string{"node", "state"}, nil),
-		nodeDown:  prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node"}, nil),
-		logger:    log.With(logger, "collector", "nodes"),
+		alloc:        prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
+		comp:         prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
+		down:         prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
+		drain:        prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
+		err:          prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
+		fail:         prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
+		idle:         prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
+		maint:        prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
+		mix:          prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
+		resv:         prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
+		unknown:      prometheus.NewDesc("slurm_nodes_unknown", "Unknown state nodes", nil, nil),
+		nodeState:    prometheus.NewDesc("slurm_node_state_info", "Node state", []string{"node", "state"}, nil),
+		nodeDown:     prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node"}, nil),
+		nodeFeatures: prometheus.NewDesc("slurm_node_features_info", "Node features", []string{"node", "features"}, nil),
+		logger:       log.With(logger, "collector", "nodes"),
 	}
 }
 
 type NodesCollector struct {
-	alloc     *prometheus.Desc
-	comp      *prometheus.Desc
-	down      *prometheus.Desc
-	drain     *prometheus.Desc
-	err       *prometheus.Desc
-	fail      *prometheus.Desc
-	idle      *prometheus.Desc
-	maint     *prometheus.Desc
-	mix       *prometheus.Desc
-	resv      *prometheus.Desc
-	unknown   *prometheus.Desc
-	nodeState *prometheus.Desc
-	nodeDown  *prometheus.Desc
-	logger    log.Logger
+	alloc        *prometheus.Desc
+	comp         *prometheus.Desc
+	down         *prometheus.Desc
+	drain        *prometheus.Desc
+	err          *prometheus.Desc
+	fail         *prometheus.Desc
+	idle         *prometheus.Desc
+	maint        *prometheus.Desc
+	mix          *prometheus.Desc
+	resv         *prometheus.Desc
+	unknown      *prometheus.Desc
+	nodeState    *prometheus.Desc
+	nodeDown     *prometheus.Desc
+	nodeFeatures *prometheus.Desc
+	logger       log.Logger
 }
 
 // Send all metric descriptions
@@ -210,6 +233,7 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.unknown
 	ch <- nc.nodeState
 	ch <- nc.nodeDown
+	ch <- nc.nodeFeatures
 }
 func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	var timeout, errorMetric float64
@@ -235,6 +259,9 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	for node, down := range nm.nodeDown {
 		ch <- prometheus.MustNewConstMetric(nc.nodeDown, prometheus.GaugeValue, down, node)
+	}
+	for node, features := range nm.nodeFeatures {
+		ch <- prometheus.MustNewConstMetric(nc.nodeFeatures, prometheus.GaugeValue, 1, node, features)
 	}
 	ch <- prometheus.MustNewConstMetric(collectError, prometheus.GaugeValue, errorMetric, "nodes")
 	ch <- prometheus.MustNewConstMetric(collecTimeout, prometheus.GaugeValue, timeout, "nodes")
