@@ -162,7 +162,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 func NodesData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-N", "-o", "%N|%T|%f")
+	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "-N", "-o", "%N|%T|%f")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

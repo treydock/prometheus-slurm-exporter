@@ -112,7 +112,7 @@ func GPUsData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
 	format := fmt.Sprintf("--Format=nodehost,gres:%d,gresused:%d", *gpuGresLength, *gpuGresLength)
-	cmd := exec.CommandContext(ctx, "sinfo", "-h", "--Node", format)
+	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "--Node", format)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
