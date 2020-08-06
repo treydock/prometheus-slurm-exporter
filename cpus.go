@@ -59,7 +59,7 @@ func ParseCPUsMetrics(input string) *CPUsMetrics {
 func CPUsData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sinfo", "-h", "-o %C")
+	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "-o %C")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
