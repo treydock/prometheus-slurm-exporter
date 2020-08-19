@@ -135,7 +135,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			case unknown.MatchString(state):
 				nm.unknown++
 			}
-			if strings.HasSuffix(state, "*") || down.MatchString(state) {
+			if strings.HasSuffix(state, "*") || down.MatchString(state) || drain.MatchString(state) || fail.MatchString(state) {
 				nodeDown[node] = 1
 			} else {
 				nodeDown[node] = 0
