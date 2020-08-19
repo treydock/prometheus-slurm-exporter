@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -33,24 +34,27 @@ import (
 var (
 	ignoreNodeFeatures = kingpin.Flag("collector.node.ignore-features",
 		"Regular expression of node features to ignore").Default("^$").String()
+	nodeReasonLength = kingpin.Flag("collector.node.reason-length",
+		"The length of reason string to append to down node metric, 0 to disable").Default("50").Int()
 )
 
 type NodesMetrics struct {
-	alloc        float64
-	comp         float64
-	down         float64
-	drain        float64
-	err          float64
-	fail         float64
-	idle         float64
-	maint        float64
-	mix          float64
-	resv         float64
-	unknown      float64
-	nodeState    map[string]string
-	nodeDown     map[string]float64
-	nodeFeatures map[string]string
-	allFeatures  []string
+	alloc          float64
+	comp           float64
+	down           float64
+	drain          float64
+	err            float64
+	fail           float64
+	idle           float64
+	maint          float64
+	mix            float64
+	resv           float64
+	unknown        float64
+	nodeState      map[string]string
+	nodeDown       map[string]float64
+	nodeDownReason map[string]string
+	nodeFeatures   map[string]string
+	allFeatures    []string
 }
 
 func NodesGetMetrics(logger log.Logger) (*NodesMetrics, error) {
@@ -81,6 +85,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 	ignoreFeatures := regexp.MustCompile(*ignoreNodeFeatures)
 	nodeState := make(map[string]string)
 	nodeDown := make(map[string]float64)
+	nodeDownReason := make(map[string]string)
 	nodeFeatures := make(map[string]string)
 	allFeatures := []string{}
 	lines := strings.Split(input, "\n")
@@ -92,12 +97,13 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 	for _, line := range lines_uniq {
 		if strings.Contains(line, "|") {
 			items := strings.Split(line, "|")
-			if len(items) != 3 {
+			if len(items) != 4 {
 				continue
 			}
 			node := items[0]
 			state := items[1]
 			features := strings.Split(strings.TrimSpace(items[2]), ",")
+			reason := strings.TrimSpace(items[3])
 			keepFeatures := []string{}
 			nodeState[node] = strings.Trim(state, "*")
 			alloc := regexp.MustCompile(`^alloc`)
@@ -140,6 +146,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			} else {
 				nodeDown[node] = 0
 			}
+			nodeDownReason[node] = reason
 			for _, feature := range features {
 				if !ignoreFeatures.MatchString(feature) {
 					keepFeatures = append(keepFeatures, feature)
@@ -153,6 +160,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 	}
 	nm.nodeState = nodeState
 	nm.nodeDown = nodeDown
+	nm.nodeDownReason = nodeDownReason
 	nm.nodeFeatures = nodeFeatures
 	nm.allFeatures = allFeatures
 	return &nm
@@ -161,8 +169,13 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 // Execute the sinfo command and return its output
 func NodesData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
+	format := "%N|%T|%f|"
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "-N", "-o", "%N|%T|%f")
+	if *nodeReasonLength != 0 {
+		reasonFormat := fmt.Sprintf("%%%dE", *nodeReasonLength)
+		format = format + reasonFormat
+	}
+	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "-N", "-o", format)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -200,7 +213,7 @@ func NewNodesCollector(logger log.Logger) *NodesCollector {
 		resv:         prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
 		unknown:      prometheus.NewDesc("slurm_nodes_unknown", "Unknown state nodes", nil, nil),
 		nodeState:    prometheus.NewDesc("slurm_node_state_info", "Node state", []string{"node", "state"}, nil),
-		nodeDown:     prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node"}, nil),
+		nodeDown:     prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node", "reason"}, nil),
 		nodeFeatures: prometheus.NewDesc("slurm_node_features_info", "Node features", []string{"node", "features"}, nil),
 		feature:      prometheus.NewDesc("slurm_node_feature", "Node feature", []string{"feature"}, nil),
 		logger:       log.With(logger, "collector", "nodes"),
@@ -267,7 +280,11 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(nc.nodeState, prometheus.GaugeValue, 1, node, state)
 	}
 	for node, down := range nm.nodeDown {
-		ch <- prometheus.MustNewConstMetric(nc.nodeDown, prometheus.GaugeValue, down, node)
+		var reason string
+		if r, ok := nm.nodeDownReason[node]; ok {
+			reason = r
+		}
+		ch <- prometheus.MustNewConstMetric(nc.nodeDown, prometheus.GaugeValue, down, node, reason)
 	}
 	for node, features := range nm.nodeFeatures {
 		ch <- prometheus.MustNewConstMetric(nc.nodeFeatures, prometheus.GaugeValue, 1, node, features)
