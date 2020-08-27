@@ -35,18 +35,19 @@ const (
 
 func metricsHandler(logger log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		longestGRES := LongestGRES(logger)
 		registry := prometheus.NewRegistry()
 		// Metrics have to be registered to be exposed
 		registry.MustRegister(NewSchedulerCollector(logger)) // from scheduler.go
 		if *slurmdbEnable {
 			registry.MustRegister(NewSlurmdbdCollector(logger)) // from slurmdbd.go
 		}
-		registry.MustRegister(NewQueueCollector(logger)) // from queue.go
-		registry.MustRegister(NewNodesCollector(logger)) // from nodes.go
-		registry.MustRegister(NewCPUsCollector(logger))  // from cpus.go
-		registry.MustRegister(NewGPUsCollector(logger))  // from gpus.go
+		registry.MustRegister(NewQueueCollector(logger))             // from queue.go
+		registry.MustRegister(NewNodesCollector(logger))             // from nodes.go
+		registry.MustRegister(NewCPUsCollector(logger))              // from cpus.go
+		registry.MustRegister(NewGPUsCollector(longestGRES, logger)) // from gpus.go
 		if *partitionEnable {
-			registry.MustRegister(NewPartitionCollector(logger)) // from partition.go
+			registry.MustRegister(NewPartitionCollector(longestGRES, logger)) // from partition.go
 		}
 
 		gatherers := prometheus.Gatherers{registry, prometheus.DefaultGatherer}

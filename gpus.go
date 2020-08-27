@@ -31,12 +31,9 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var gpuGresPattern = regexp.MustCompile(`^gpu\:([^\:]+)\:?(\d+)?`)
-var gpuGresLength = kingpin.Flag("collector.gpus.gres-length",
-	"Length of GRES string to query").Default("100").Int()
 
 type GPUsMetrics struct {
 	alloc float64
@@ -44,8 +41,8 @@ type GPUsMetrics struct {
 	total float64
 }
 
-func GPUsGetMetrics(logger log.Logger) (*GPUsMetrics, error) {
-	data, err := GPUsData(logger)
+func GPUsGetMetrics(longestGRES int, logger log.Logger) (*GPUsMetrics, error) {
+	data, err := GPUsData(longestGRES, logger)
 	if err != nil {
 		return &GPUsMetrics{}, err
 	}
@@ -108,10 +105,11 @@ func ParseGPUsMetrics(input string) *GPUsMetrics {
 // Execute the sinfo command to list all nodes and their associated GRES
 // information. Note: nodes can be in more than one partition so need to dedup
 // the output of sinof by nodehost.
-func GPUsData(logger log.Logger) (string, error) {
+func GPUsData(longestGRES int, logger log.Logger) (string, error) {
+	level.Debug(logger).Log("msg", "Query GPU data", "longestgres", longestGRES)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	format := fmt.Sprintf("--Format=nodehost,gres:%d,gresused:%d", *gpuGresLength, *gpuGresLength)
+	format := fmt.Sprintf("--Format=nodehost,gres:%d,gresused:%d", longestGRES, longestGRES)
 	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "--Node", format)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -129,20 +127,22 @@ func GPUsData(logger log.Logger) (string, error) {
 	return stdout.String(), nil
 }
 
-func NewGPUsCollector(logger log.Logger) *GPUsCollector {
+func NewGPUsCollector(longestGRES int, logger log.Logger) *GPUsCollector {
 	return &GPUsCollector{
-		alloc:  prometheus.NewDesc("slurm_gpus_alloc", "Allocated GPUs", nil, nil),
-		idle:   prometheus.NewDesc("slurm_gpus_idle", "Idle GPUs", nil, nil),
-		total:  prometheus.NewDesc("slurm_gpus_total", "Total GPUs", nil, nil),
-		logger: log.With(logger, "collector", "gpus"),
+		alloc:       prometheus.NewDesc("slurm_gpus_alloc", "Allocated GPUs", nil, nil),
+		idle:        prometheus.NewDesc("slurm_gpus_idle", "Idle GPUs", nil, nil),
+		total:       prometheus.NewDesc("slurm_gpus_total", "Total GPUs", nil, nil),
+		longestGRES: longestGRES,
+		logger:      log.With(logger, "collector", "gpus"),
 	}
 }
 
 type GPUsCollector struct {
-	alloc  *prometheus.Desc
-	idle   *prometheus.Desc
-	total  *prometheus.Desc
-	logger log.Logger
+	alloc       *prometheus.Desc
+	idle        *prometheus.Desc
+	total       *prometheus.Desc
+	longestGRES int
+	logger      log.Logger
 }
 
 func (cc *GPUsCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -152,7 +152,7 @@ func (cc *GPUsCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 func (cc *GPUsCollector) Collect(ch chan<- prometheus.Metric) {
 	var timeout, errorMetric float64
-	cm, err := GPUsGetMetrics(cc.logger)
+	cm, err := GPUsGetMetrics(cc.longestGRES, cc.logger)
 	if err == context.DeadlineExceeded {
 		timeout = 1
 	} else if err != nil {

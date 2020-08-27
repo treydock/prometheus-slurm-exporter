@@ -78,7 +78,7 @@ type PartitionMetrics struct {
 	gpuIdle         map[string]float64
 }
 
-func PartitionGetMetrics(logger log.Logger) (*PartitionMetrics, error) {
+func PartitionGetMetrics(longestGRES int, logger log.Logger) (*PartitionMetrics, error) {
 	var cpuData, nodeData, jobData, gpuData string
 	var cpuErr, nodeErr, jobErr, gpuErr error
 
@@ -98,7 +98,7 @@ func PartitionGetMetrics(logger log.Logger) (*PartitionMetrics, error) {
 		wg.Done()
 	}()
 	go func() {
-		gpuData, gpuErr = PartitionGPUsData(logger)
+		gpuData, gpuErr = PartitionGPUsData(longestGRES, logger)
 		wg.Done()
 	}()
 	wg.Wait()
@@ -520,10 +520,10 @@ func PartitionJobData(logger log.Logger) (string, error) {
 	return stdout.String(), nil
 }
 
-func PartitionGPUsData(logger log.Logger) (string, error) {
+func PartitionGPUsData(longestGRES int, logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	format := fmt.Sprintf("--Format=partitionname:50,gres:%d,gresused:%d", *gpuGresLength, *gpuGresLength)
+	format := fmt.Sprintf("--Format=partitionname:50,gres:%d,gresused:%d", longestGRES, longestGRES)
 	cmd := exec.CommandContext(ctx, "sinfo", "-a", "-h", "--Node", format)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -547,7 +547,7 @@ func PartitionGPUsData(logger log.Logger) (string, error) {
  * https://godoc.org/github.com/prometheus/client_golang/prometheus#Collector
  */
 
-func NewPartitionCollector(logger log.Logger) *PartitionCollector {
+func NewPartitionCollector(longestGRES int, logger log.Logger) *PartitionCollector {
 	labels := []string{"partition"}
 	return &PartitionCollector{
 		cpuAlloc: prometheus.NewDesc(
@@ -649,6 +649,7 @@ func NewPartitionCollector(logger log.Logger) *PartitionCollector {
 		gpuIdle: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "gpus_idle"),
 			"Number of GPUs idle in the partition", labels, nil),
+        longestGRES: longestGRES,
 		logger: log.With(logger, "collector", "partition"),
 	}
 }
@@ -687,6 +688,7 @@ type PartitionCollector struct {
 	gpuAlloc        *prometheus.Desc
 	gpuTotal        *prometheus.Desc
 	gpuIdle         *prometheus.Desc
+	longestGRES     int
 	logger          log.Logger
 }
 
@@ -728,7 +730,7 @@ func (pc *PartitionCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 func (pc *PartitionCollector) Collect(ch chan<- prometheus.Metric) {
 	var timeout, errorMetric float64
-	pm, err := PartitionGetMetrics(pc.logger)
+	pm, err := PartitionGetMetrics(pc.longestGRES, pc.logger)
 	if err == context.DeadlineExceeded {
 		timeout = 1
 	} else if err != nil {
