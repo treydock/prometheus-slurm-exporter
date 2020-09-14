@@ -200,10 +200,12 @@ func ParsePartitionMetrics(cpuData string, nodeData string, jobData string, gpuD
 			pm.jobsNodeFail[part] = 0
 		}
 		if _, ok := pm.jobsMedianWait[part]; !ok {
-			pm.jobsMedianWait[part] = 0
+			waitKey := fmt.Sprintf("%s|", part)
+			pm.jobsMedianWait[waitKey] = 0
 		}
 		if _, ok := pm.jobsAvgWait[part]; !ok {
-			pm.jobsAvgWait[part] = 0
+			waitKey := fmt.Sprintf("%s|", part)
+			pm.jobsAvgWait[waitKey] = 0
 		}
 	}
 
@@ -355,22 +357,25 @@ func ParsePartitionJobs(input string, pm *PartitionMetrics, partitions []string,
 			continue
 		}
 		state := items[1]
-		var w = waitTimes[partition]
+		reason := items[2]
 		jobsTotal[partition]++
 		switch state {
 		case "PENDING":
-			if items[2] == "Dependency" {
+			if reason == "Dependency" {
 				jobsPendingDep[partition]++
 			} else {
 				jobsPending[partition]++
-				submitTime, err := time.Parse(timeFormat, fmt.Sprintf("%s %s", items[4], timeZone))
-				if err != nil {
-					level.Error(logger).Log("msg", "Unable to parse start time value", "value", items[4], "err", err)
-				} else {
-					wait := now.Sub(submitTime)
-					w = append(w, wait.Seconds())
-				}
 			}
+			waitKey := fmt.Sprintf("%s|%s", partition, reason)
+			var w = waitTimes[waitKey]
+			submitTime, err := time.Parse(timeFormat, fmt.Sprintf("%s %s", items[4], timeZone))
+			if err != nil {
+				level.Error(logger).Log("msg", "Unable to parse start time value", "value", items[4], "err", err)
+			} else {
+				wait := now.Sub(submitTime)
+				w = append(w, wait.Seconds())
+			}
+			waitTimes[waitKey] = w
 		case "RUNNING":
 			jobsRunning[partition]++
 		case "SUSPENDED":
@@ -392,7 +397,6 @@ func ParsePartitionJobs(input string, pm *PartitionMetrics, partitions []string,
 		case "NODE_FAIL":
 			jobsNodeFail[partition]++
 		}
-		waitTimes[partition] = w
 	}
 	for partition, w := range waitTimes {
 		if len(w) == 0 {
@@ -549,6 +553,7 @@ func PartitionGPUsData(longestGRES int, logger log.Logger) (string, error) {
 
 func NewPartitionCollector(longestGRES int, logger log.Logger) *PartitionCollector {
 	labels := []string{"partition"}
+	waitLabels := []string{"partition", "reason"}
 	return &PartitionCollector{
 		cpuAlloc: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "cpus_alloc"),
@@ -636,10 +641,10 @@ func NewPartitionCollector(longestGRES int, logger log.Logger) *PartitionCollect
 			"Number of jobs stopped due to node fail in the partition", labels, nil),
 		jobsMedianWait: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "jobs_median_wait_time_seconds"),
-			"The median wait time for pending jobs in the partition", labels, nil),
+			"The median wait time for pending jobs in the partition", waitLabels, nil),
 		jobsAvgWait: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "jobs_average_wait_time_seconds"),
-			"The average wait time for pending jobs in the partition", labels, nil),
+			"The average wait time for pending jobs in the partition", waitLabels, nil),
 		gpuAlloc: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "gpus_alloc"),
 			"Number of GPUs allocated in the partition", labels, nil),
@@ -649,8 +654,8 @@ func NewPartitionCollector(longestGRES int, logger log.Logger) *PartitionCollect
 		gpuIdle: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "gpus_idle"),
 			"Number of GPUs idle in the partition", labels, nil),
-        longestGRES: longestGRES,
-		logger: log.With(logger, "collector", "partition"),
+		longestGRES: longestGRES,
+		logger:      log.With(logger, "collector", "partition"),
 	}
 }
 
@@ -817,11 +822,13 @@ func (pc *PartitionCollector) Collect(ch chan<- prometheus.Metric) {
 	for partition, count := range pm.jobsNodeFail {
 		ch <- prometheus.MustNewConstMetric(pc.jobsNodeFail, prometheus.GaugeValue, count, partition)
 	}
-	for partition, count := range pm.jobsMedianWait {
-		ch <- prometheus.MustNewConstMetric(pc.jobsMedianWait, prometheus.GaugeValue, count, partition)
+	for key, count := range pm.jobsMedianWait {
+		keys := strings.Split(key, "|")
+		ch <- prometheus.MustNewConstMetric(pc.jobsMedianWait, prometheus.GaugeValue, count, keys[0], keys[1])
 	}
-	for partition, count := range pm.jobsAvgWait {
-		ch <- prometheus.MustNewConstMetric(pc.jobsAvgWait, prometheus.GaugeValue, count, partition)
+	for key, count := range pm.jobsAvgWait {
+		keys := strings.Split(key, "|")
+		ch <- prometheus.MustNewConstMetric(pc.jobsAvgWait, prometheus.GaugeValue, count, keys[0], keys[1])
 	}
 	for partition, count := range pm.gpuIdle {
 		ch <- prometheus.MustNewConstMetric(pc.gpuIdle, prometheus.GaugeValue, count, partition)
