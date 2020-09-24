@@ -38,7 +38,9 @@ import (
 // Basic metrics for the scheduler
 type SchedulerMetrics struct {
 	threads                             float64
-	queue_size                          float64
+	agent_queue_size                    float64
+	agent_count                         float64
+	agent_thread_count                  float64
 	dbd_queue_size                      float64
 	last_cycle                          float64
 	mean_cycle                          float64
@@ -51,6 +53,7 @@ type SchedulerMetrics struct {
 	backfill_last_depth_cycle_try_sched float64
 	backfill_depth_mean                 float64
 	backfill_depth_mean_try_sched       float64
+	backfill_depth_mean_try_depth       float64
 	backfill_last_queue_length          float64
 	backfill_queue_length_mean          float64
 	backfill_last_table_size            float64
@@ -89,89 +92,104 @@ func SchedulerData(logger log.Logger) (string, error) {
 }
 
 // Extract the relevant metrics from the sdiag output
-func ParseSchedulerMetrics(input string) *SchedulerMetrics {
+func ParseSchedulerMetrics(input string, logger log.Logger) *SchedulerMetrics {
 	var sm SchedulerMetrics
 	lines := strings.Split(input, "\n")
 	// Guard variables to check for string repetitions in the output of sdiag
 	// (two occurencies of the following strings: 'Last cycle', 'Mean cycle')
 	in_backfill := false
 	for _, line := range lines {
+		if strings.Contains(line, "Backfilling stats") {
+			in_backfill = true
+		}
+		if strings.Contains(line, "Remote Procedure Call statistics") {
+			break
+		}
 		if strings.Contains(line, ":") {
 			state := strings.Split(line, ":")[0]
-			st := regexp.MustCompile(`^Server thread`)
-			qs := regexp.MustCompile(`^Agent queue`)
-			dbd := regexp.MustCompile(`^DBD Agent`)
-			lc := regexp.MustCompile(`^[\s]+Last cycle$`)
-			mc := regexp.MustCompile(`^[\s]+Mean cycle$`)
-			mdc := regexp.MustCompile(`^[\s]+Mean depth cycle`)
-			cpm := regexp.MustCompile(`^[\s]+Cycles per`)
-			lql := regexp.MustCompile(`^[\s]+Last queue length`)
-			dpm := regexp.MustCompile(`^[\s]+Depth Mean$`)
-			ldc := regexp.MustCompile(`^[\s]+Last depth cycle`)
-			qlm := regexp.MustCompile(`^[\s]+Queue length Mean`)
-			lts := regexp.MustCompile(`^[\s]+Last table size`)
-			mts := regexp.MustCompile(`^[\s]+Mean table size`)
-			tbs := regexp.MustCompile(`^[\s]+Total backfilled jobs \(since last slurm start\)`)
-			tbc := regexp.MustCompile(`^[\s]+Total backfilled jobs \(since last stats cycle start\)`)
-			tbh := regexp.MustCompile(`^[\s]+Total backfilled heterogeneous job components`)
-
-			if strings.Contains(line, "Backfilling stats") {
-				in_backfill = true
+			value, err := strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+			if err != nil {
+				level.Debug(logger).Log("msg", "Unable to parse value from line", "line", line)
+				continue
 			}
+			st := regexp.MustCompile(`(?i)^Server thread`)
+			aqs := regexp.MustCompile(`(?i)^Agent queue size`)
+			ac := regexp.MustCompile(`(?i)^Agent count`)
+			atc := regexp.MustCompile(`(?i)^Agent thread count`)
+			dbd := regexp.MustCompile(`(?i)^DBD Agent`)
+			lc := regexp.MustCompile(`(?i)^[\s]+Last cycle$`)
+			mc := regexp.MustCompile(`(?i)^[\s]+Mean cycle$`)
+			mdc := regexp.MustCompile(`(?i)^[\s]+Mean depth cycle`)
+			cpm := regexp.MustCompile(`(?i)^[\s]+Cycles per`)
+			lql := regexp.MustCompile(`(?i)^[\s]+Last queue length`)
+			dpm := regexp.MustCompile(`(?i)^[\s]+Depth Mean`)
+			ldc := regexp.MustCompile(`(?i)^[\s]+Last depth cycle`)
+			qlm := regexp.MustCompile(`(?i)^[\s]+Queue length Mean`)
+			lts := regexp.MustCompile(`(?i)^[\s]+Last table size`)
+			mts := regexp.MustCompile(`(?i)^[\s]+Mean table size`)
+			tbs := regexp.MustCompile(`(?i)^[\s]+Total backfilled jobs \(since last slurm start\)`)
+			tbc := regexp.MustCompile(`(?i)^[\s]+Total backfilled jobs \(since last stats cycle start\)`)
+			tbh := regexp.MustCompile(`(?i)^[\s]+Total backfilled heterogeneous job components`)
 
 			switch {
-			case st.MatchString(state) == true:
-				sm.threads, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case qs.MatchString(state) == true:
-				sm.queue_size, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case dbd.MatchString(state) == true:
-				sm.dbd_queue_size, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case lc.MatchString(state) == true:
+			case st.MatchString(state):
+				sm.threads = value
+			case aqs.MatchString(state):
+				sm.agent_queue_size = value
+			case ac.MatchString(state):
+				sm.agent_count = value
+			case atc.MatchString(state):
+				sm.agent_thread_count = value
+			case dbd.MatchString(state):
+				sm.dbd_queue_size = value
+			case lc.MatchString(state):
 				if in_backfill {
-					sm.backfill_last_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_last_cycle = value
 				} else {
-					sm.last_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.last_cycle = value
 				}
-			case mc.MatchString(state) == true:
+			case mc.MatchString(state):
 				if in_backfill {
-					sm.backfill_mean_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_mean_cycle = value
 				} else {
-					sm.mean_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.mean_cycle = value
 				}
 			case mdc.MatchString(state):
-				sm.mean_depth_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case cpm.MatchString(state) == true:
-				sm.cycle_per_minute, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+				sm.mean_depth_cycle = value
+			case cpm.MatchString(state):
+				sm.cycle_per_minute = value
 			case lql.MatchString(state):
 				if in_backfill {
-					sm.backfill_last_queue_length, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_last_queue_length = value
 				} else {
-					sm.last_queue_length, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.last_queue_length = value
 				}
-			case dpm.MatchString(state) == true:
+			case dpm.MatchString(state):
 				if strings.Contains(line, "try sched") {
-					sm.backfill_depth_mean_try_sched, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_depth_mean_try_sched = value
+				} else if strings.Contains(line, "try depth") {
+					sm.backfill_depth_mean_try_depth = value
 				} else {
-					sm.backfill_depth_mean, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_depth_mean = value
 				}
-			case ldc.MatchString(state) == true:
+			case ldc.MatchString(state):
 				if strings.Contains(line, "try sched") {
-					sm.backfill_last_depth_cycle_try_sched, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_last_depth_cycle_try_sched = value
 				} else {
-					sm.backfill_last_depth_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+					sm.backfill_last_depth_cycle = value
 				}
 			case qlm.MatchString(state):
-				sm.backfill_queue_length_mean, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+				sm.backfill_queue_length_mean = value
 			case lts.MatchString(state):
-				sm.backfill_last_table_size, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+				sm.backfill_last_table_size = value
 			case mts.MatchString(state):
-				sm.backfill_mean_table_size, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case tbs.MatchString(state) == true:
-				sm.total_backfilled_jobs_since_start, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case tbc.MatchString(state) == true:
-				sm.total_backfilled_jobs_since_cycle, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
-			case tbh.MatchString(state) == true:
-				sm.total_backfilled_heterogeneous, _ = strconv.ParseFloat(strings.TrimSpace(strings.Split(line, ":")[1]), 64)
+				sm.backfill_mean_table_size = value
+			case tbs.MatchString(state):
+				sm.total_backfilled_jobs_since_start = value
+			case tbc.MatchString(state):
+				sm.total_backfilled_jobs_since_cycle = value
+			case tbh.MatchString(state):
+				sm.total_backfilled_heterogeneous = value
 			}
 		}
 	}
@@ -253,7 +271,7 @@ func SchedulerGetMetrics(logger log.Logger) (*SchedulerMetrics, error) {
 	if err != nil {
 		return &SchedulerMetrics{}, err
 	}
-	return ParseSchedulerMetrics(data), nil
+	return ParseSchedulerMetrics(data, logger), nil
 }
 
 /*
@@ -265,7 +283,9 @@ func SchedulerGetMetrics(logger log.Logger) (*SchedulerMetrics, error) {
 // Collector strcture
 type SchedulerCollector struct {
 	threads                             *prometheus.Desc
-	queue_size                          *prometheus.Desc
+	agent_queue_size                    *prometheus.Desc
+	agent_count                         *prometheus.Desc
+	agent_thread_count                  *prometheus.Desc
 	dbd_queue_size                      *prometheus.Desc
 	last_cycle                          *prometheus.Desc
 	mean_cycle                          *prometheus.Desc
@@ -276,6 +296,7 @@ type SchedulerCollector struct {
 	backfill_mean_cycle                 *prometheus.Desc
 	backfill_depth_mean                 *prometheus.Desc
 	backfill_depth_mean_try_sched       *prometheus.Desc
+	backfill_depth_mean_try_depth       *prometheus.Desc
 	backfill_last_depth_cycle           *prometheus.Desc
 	backfill_last_depth_cycle_try_sched *prometheus.Desc
 	backfill_last_queue_length          *prometheus.Desc
@@ -297,7 +318,9 @@ type SchedulerCollector struct {
 // Send all metric descriptions
 func (c *SchedulerCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.threads
-	ch <- c.queue_size
+	ch <- c.agent_queue_size
+	ch <- c.agent_count
+	ch <- c.agent_thread_count
 	ch <- c.dbd_queue_size
 	ch <- c.last_cycle
 	ch <- c.mean_cycle
@@ -308,6 +331,7 @@ func (c *SchedulerCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.backfill_mean_cycle
 	ch <- c.backfill_depth_mean
 	ch <- c.backfill_depth_mean_try_sched
+	ch <- c.backfill_depth_mean_try_depth
 	ch <- c.backfill_last_depth_cycle
 	ch <- c.backfill_last_depth_cycle_try_sched
 	ch <- c.backfill_last_queue_length
@@ -335,7 +359,9 @@ func (sc *SchedulerCollector) Collect(ch chan<- prometheus.Metric) {
 		errorMetric = 1
 	}
 	ch <- prometheus.MustNewConstMetric(sc.threads, prometheus.GaugeValue, sm.threads)
-	ch <- prometheus.MustNewConstMetric(sc.queue_size, prometheus.GaugeValue, sm.queue_size)
+	ch <- prometheus.MustNewConstMetric(sc.agent_queue_size, prometheus.GaugeValue, sm.agent_queue_size)
+	ch <- prometheus.MustNewConstMetric(sc.agent_count, prometheus.GaugeValue, sm.agent_count)
+	ch <- prometheus.MustNewConstMetric(sc.agent_thread_count, prometheus.GaugeValue, sm.agent_thread_count)
 	ch <- prometheus.MustNewConstMetric(sc.dbd_queue_size, prometheus.GaugeValue, sm.dbd_queue_size)
 	ch <- prometheus.MustNewConstMetric(sc.last_cycle, prometheus.GaugeValue, sm.last_cycle)
 	ch <- prometheus.MustNewConstMetric(sc.mean_cycle, prometheus.GaugeValue, sm.mean_cycle)
@@ -346,6 +372,7 @@ func (sc *SchedulerCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(sc.backfill_mean_cycle, prometheus.GaugeValue, sm.backfill_mean_cycle)
 	ch <- prometheus.MustNewConstMetric(sc.backfill_depth_mean, prometheus.GaugeValue, sm.backfill_depth_mean)
 	ch <- prometheus.MustNewConstMetric(sc.backfill_depth_mean_try_sched, prometheus.GaugeValue, sm.backfill_depth_mean_try_sched)
+	ch <- prometheus.MustNewConstMetric(sc.backfill_depth_mean_try_depth, prometheus.GaugeValue, sm.backfill_depth_mean_try_depth)
 	ch <- prometheus.MustNewConstMetric(sc.backfill_last_depth_cycle, prometheus.GaugeValue, sm.backfill_last_depth_cycle)
 	ch <- prometheus.MustNewConstMetric(sc.backfill_last_depth_cycle_try_sched, prometheus.GaugeValue, sm.backfill_last_depth_cycle_try_sched)
 	ch <- prometheus.MustNewConstMetric(sc.backfill_last_queue_length, prometheus.GaugeValue, sm.backfill_last_queue_length)
@@ -388,9 +415,19 @@ func NewSchedulerCollector(logger log.Logger) *SchedulerCollector {
 			"Information provided by the Slurm sdiag command, number of scheduler threads ",
 			nil,
 			nil),
-		queue_size: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "scheduler", "queue_size"),
-			"Information provided by the Slurm sdiag command, length of the scheduler queue",
+		agent_queue_size: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "scheduler", "agent_queue_size"),
+			"Information provided by the Slurm sdiag command, queued outgoing RPC requests",
+			nil,
+			nil),
+		agent_count: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "scheduler", "agent_count"),
+			"Information provided by the Slurm sdiag command, number of agent threads",
+			nil,
+			nil),
+		agent_thread_count: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "scheduler", "agent_thread_count"),
+			"Information provided by the Slurm sdiag command, active agent threads",
 			nil,
 			nil),
 		dbd_queue_size: prometheus.NewDesc(
@@ -441,6 +478,11 @@ func NewSchedulerCollector(logger log.Logger) *SchedulerCollector {
 		backfill_depth_mean_try_sched: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "scheduler", "backfill_depth_mean_try_sched"),
 			"Information provided by the Slurm sdiag command, scheduler backfill mean depth (try sched)",
+			nil,
+			nil),
+		backfill_depth_mean_try_depth: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "scheduler", "backfill_depth_mean_try_depth"),
+			"Information provided by the Slurm sdiag command, scheduler backfill mean depth (try depth)",
 			nil,
 			nil),
 		backfill_last_depth_cycle: prometheus.NewDesc(
