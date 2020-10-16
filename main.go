@@ -49,6 +49,7 @@ func metricsHandler(logger log.Logger) http.HandlerFunc {
 		if *partitionEnable {
 			registry.MustRegister(NewPartitionCollector(longestGRES, logger)) // from partition.go
 		}
+		registry.MustRegister(NewLicenseCollector(logger)) // from license.go
 
 		gatherers := prometheus.Gatherers{registry, prometheus.DefaultGatherer}
 		h := promhttp.HandlerFor(gatherers, promhttp.HandlerOpts{})

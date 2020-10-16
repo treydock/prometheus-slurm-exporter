@@ -1,0 +1,14 @@
+LicenseName=abaqus@license6 Total=300 Used=5 Free=295 Remote=yes
+LicenseName=abaquscae@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=abaqusexplicit@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=abaqusextended@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=ansys@license5 Total=50 Used=0 Free=50 Remote=yes
+LicenseName=ansyspar@license5 Total=256 Used=0 Free=256 Remote=yes
+LicenseName=comsolscript@license6 Total=3 Used=0 Free=3 Remote=yes
+LicenseName=epik@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=glide@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=ligprep@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=macromodel@license6 Total=10 Used=0 Free=10 Remote=yes
+LicenseName=qikprep@license6 Total=20 Used=0 Free=20 Remote=yes
+LicenseName=stata@osc Total=5 Used=0 Free=5 Remote=yes
+LicenseName=usearch@osc Total=1 Used=0 Free=1 Remote=yes
