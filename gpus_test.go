@@ -42,6 +42,6 @@ func TestGPUsGetMetrics(t *testing.T) {
 	collectorTimeout = &timeout
 	w := log.NewSyncWriter(os.Stderr)
 	logger := log.NewLogfmtLogger(w)
-	data, _ := GPUsGetMetrics(logger)
+	data, _ := GPUsGetMetrics(30, logger)
 	t.Logf("%+v", data)
 }
