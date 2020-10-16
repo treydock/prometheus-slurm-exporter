@@ -64,6 +64,6 @@ func TestPartitionGetMetrics(t *testing.T) {
 	collectorTimeout = &timeout
 	w := log.NewSyncWriter(os.Stderr)
 	logger := log.NewLogfmtLogger(w)
-	data, _ := PartitionGetMetrics(logger)
+	data, _ := PartitionGetMetrics(30, logger)
 	t.Logf("%+v", data)
 }
