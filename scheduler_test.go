@@ -31,7 +31,9 @@ func TestSchedulerMetrics(t *testing.T) {
 		t.Fatalf("Can not open test data: %v", err)
 	}
 	data, err := ioutil.ReadAll(file)
-	t.Logf("%+v", ParseSchedulerMetrics(string(data)))
+	w := log.NewSyncWriter(os.Stderr)
+	logger := log.NewLogfmtLogger(w)
+	t.Logf("%+v", ParseSchedulerMetrics(string(data), logger))
 }
 
 func TestSchedulerGetMetrics(t *testing.T) {
