@@ -22,7 +22,7 @@ import (
 	"bytes"
 	"context"
 	"os/exec"
-    "strings"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -55,4 +55,26 @@ func LongestGRES(logger log.Logger) int {
 		}
 	}
 	return longest + 20
+}
+
+func Partitions(logger log.Logger) []string {
+	partitions := []string{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sinfo", "-o", "%R")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			level.Error(logger).Log("msg", "Timeout executing sinfo")
+			return partitions
+		} else {
+			level.Error(logger).Log("msg", "Error executing sinfo", "err", stderr.String(), "out", stdout.String())
+			return partitions
+		}
+	}
+	partitions = strings.Split(stdout.String(), "\n")
+	return partitions
 }

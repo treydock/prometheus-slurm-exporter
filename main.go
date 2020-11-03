@@ -18,6 +18,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -47,7 +48,12 @@ func metricsHandler(logger log.Logger) http.HandlerFunc {
 		registry.MustRegister(NewCPUsCollector(logger))              // from cpus.go
 		registry.MustRegister(NewGPUsCollector(longestGRES, logger)) // from gpus.go
 		if *partitionEnable {
-			registry.MustRegister(NewPartitionCollector(longestGRES, logger)) // from partition.go
+			partitions := Partitions(logger)
+			ignoreParts := strings.Split(*ignorePartitions, ",")
+			registry.MustRegister(NewPartitionCPUsCollector(ignoreParts, logger))              // from partition_cpu.go
+			registry.MustRegister(NewPartitionGPUsCollector(longestGRES, ignoreParts, logger)) // from partition_gpu.go
+			registry.MustRegister(NewPartitionJobsCollector(partitions, ignoreParts, logger))  // from partition_jobs.go
+			registry.MustRegister(NewPartitionNodesCollector(partitions, ignoreParts, logger)) // from partition_jobs.go
 		}
 		registry.MustRegister(NewLicenseCollector(logger)) // from license.go
 
@@ -62,6 +68,10 @@ var (
 		"Address to listen on for web interface and telemetry.").Default(":8080").String()
 	collectorTimeout = kingpin.Flag("collector-timeout",
 		"Time in seconds each collector can run before being timed out").Default("30").Int()
+	partitionEnable = kingpin.Flag("collector.partition",
+		"Enable the partition collector").Default("false").Bool()
+	ignorePartitions = kingpin.Flag("collector.partition.ignore",
+		"Comma separated list of partitions to ignore").Default("").String()
 	collectError = prometheus.NewDesc("slurm_exporter_collect_error",
 		"Indicates if an error has occurred during collection", []string{"collector"}, nil)
 	collecTimeout = prometheus.NewDesc("slurm_exporter_collect_timeout",

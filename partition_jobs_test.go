@@ -25,38 +25,23 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-func TestPartitionMetrics(t *testing.T) {
+func TestParsePartitionJobsMetrics(t *testing.T) {
 	// Read the input data from a file
-	cpuFile, cpuErr := os.Open("test_data/sinfo_partition_cpus.txt")
-	if cpuErr != nil {
-		t.Fatalf("Can not open test data: %v", cpuErr)
+	jobFile, err := os.Open("test_data/squeue_partitions.txt")
+	if err != nil {
+		t.Fatalf("Can not open test data :%v", err)
 	}
-	nodeFile, nodeErr := os.Open("test_data/sinfo_partition_nodestates.txt")
-	if nodeErr != nil {
-		t.Fatalf("Can not open test data :%v", nodeErr)
-	}
-	jobFile, jobErr := os.Open("test_data/squeue_partitions.txt")
-	if jobErr != nil {
-		t.Fatalf("Can not open test data :%v", jobErr)
-	}
-	gpuFile, gpuErr := os.Open("test_data/sinfo_partition_gpus.txt")
-	if gpuErr != nil {
-		t.Fatalf("Can not open test data :%v", gpuErr)
-	}
-	cpuData, _ := ioutil.ReadAll(cpuFile)
-	nodeData, _ := ioutil.ReadAll(nodeFile)
 	jobData, _ := ioutil.ReadAll(jobFile)
-	gpuData, _ := ioutil.ReadAll(gpuFile)
 	timeNowFunc = func() time.Time {
 		t, _ := time.Parse(timeFormat, "2020-06-05T08:46:55 EST")
 		return t
 	}
 	w := log.NewSyncWriter(os.Stderr)
 	logger := log.NewLogfmtLogger(w)
-	t.Logf("%+v", ParsePartitionMetrics(string(cpuData), string(nodeData), string(jobData), string(gpuData), logger))
+	t.Logf("%+v", ParsePartitionJobsMetrics(string(jobData), []string{}, []string{}, logger))
 }
 
-func TestPartitionGetMetrics(t *testing.T) {
+func TestPartitionGetJobsMetrics(t *testing.T) {
 	if _, err := kingpin.CommandLine.Parse([]string{}); err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +49,6 @@ func TestPartitionGetMetrics(t *testing.T) {
 	collectorTimeout = &timeout
 	w := log.NewSyncWriter(os.Stderr)
 	logger := log.NewLogfmtLogger(w)
-	data, _ := PartitionGetMetrics(30, logger)
+	data, _ := PartitionGetJobsMetrics([]string{}, []string{}, logger)
 	t.Logf("%+v", data)
 }
