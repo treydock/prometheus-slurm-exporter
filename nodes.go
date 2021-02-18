@@ -50,6 +50,7 @@ type NodesMetrics struct {
 	mix            float64
 	resv           float64
 	unknown        float64
+	total          float64
 	nodeState      map[string]string
 	nodeDown       map[string]float64
 	nodeDownReason map[string]string
@@ -117,6 +118,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			mix := regexp.MustCompile(`^mix`)
 			resv := regexp.MustCompile(`^res`)
 			unknown := regexp.MustCompile(`^unknown`)
+			nm.total++
 			switch {
 			case alloc.MatchString(state) == true:
 				nm.alloc++
@@ -212,6 +214,7 @@ func NewNodesCollector(logger log.Logger) *NodesCollector {
 		mix:          prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
 		resv:         prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
 		unknown:      prometheus.NewDesc("slurm_nodes_unknown", "Unknown state nodes", nil, nil),
+		total:        prometheus.NewDesc("slurm_nodes_total", "Total nodes", nil, nil),
 		nodeState:    prometheus.NewDesc("slurm_node_state_info", "Node state", []string{"node", "state"}, nil),
 		nodeDown:     prometheus.NewDesc("slurm_node_down", "Indicates if a node is down, 1=down 0=not down", []string{"node", "reason"}, nil),
 		nodeFeatures: prometheus.NewDesc("slurm_node_features_info", "Node features", []string{"node", "features"}, nil),
@@ -232,6 +235,7 @@ type NodesCollector struct {
 	mix          *prometheus.Desc
 	resv         *prometheus.Desc
 	unknown      *prometheus.Desc
+	total        *prometheus.Desc
 	nodeState    *prometheus.Desc
 	nodeDown     *prometheus.Desc
 	nodeFeatures *prometheus.Desc
@@ -252,6 +256,7 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.mix
 	ch <- nc.resv
 	ch <- nc.unknown
+	ch <- nc.total
 	ch <- nc.nodeState
 	ch <- nc.nodeDown
 	ch <- nc.nodeFeatures
@@ -276,6 +281,7 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(nc.mix, prometheus.GaugeValue, nm.mix)
 	ch <- prometheus.MustNewConstMetric(nc.resv, prometheus.GaugeValue, nm.resv)
 	ch <- prometheus.MustNewConstMetric(nc.unknown, prometheus.GaugeValue, nm.unknown)
+	ch <- prometheus.MustNewConstMetric(nc.total, prometheus.GaugeValue, nm.total)
 	for node, state := range nm.nodeState {
 		ch <- prometheus.MustNewConstMetric(nc.nodeState, prometheus.GaugeValue, 1, node, state)
 	}
