@@ -36,8 +36,10 @@ type PartitionNodeMetrics struct {
 	nodeErr     map[string]float64
 	nodeFail    map[string]float64
 	nodeIdle    map[string]float64
+	nodeInval   map[string]float64
 	nodeMaint   map[string]float64
 	nodeMix     map[string]float64
+	nodePlanned map[string]float64
 	nodeResv    map[string]float64
 	nodeUnknown map[string]float64
 }
@@ -80,11 +82,17 @@ func ParsePartitionNodeMetrics(nodeData string, partitions []string, ignore []st
 		if _, ok := pm.nodeIdle[part]; !ok {
 			pm.nodeIdle[part] = 0
 		}
+		if _, ok := pm.nodeInval[part]; !ok {
+			pm.nodeInval[part] = 0
+		}
 		if _, ok := pm.nodeMaint[part]; !ok {
 			pm.nodeMaint[part] = 0
 		}
 		if _, ok := pm.nodeMix[part]; !ok {
 			pm.nodeMix[part] = 0
+		}
+		if _, ok := pm.nodePlanned[part]; !ok {
+			pm.nodePlanned[part] = 0
 		}
 		if _, ok := pm.nodeResv[part]; !ok {
 			pm.nodeResv[part] = 0
@@ -105,8 +113,10 @@ func ParsePartitionNodes(input string, pm *PartitionNodeMetrics, ignore []string
 	nodeErr := make(map[string]float64)
 	nodeFail := make(map[string]float64)
 	nodeIdle := make(map[string]float64)
+	nodeInval := make(map[string]float64)
 	nodeMaint := make(map[string]float64)
 	nodeMix := make(map[string]float64)
+	nodePlanned := make(map[string]float64)
 	nodeResv := make(map[string]float64)
 	nodeUnknown := make(map[string]float64)
 
@@ -128,8 +138,10 @@ func ParsePartitionNodes(input string, pm *PartitionNodeMetrics, ignore []string
 		fail := regexp.MustCompile(`^fail`)
 		err := regexp.MustCompile(`^err`)
 		idle := regexp.MustCompile(`^idle`)
+		inval := regexp.MustCompile(`^inval`)
 		maint := regexp.MustCompile(`^maint`)
 		mix := regexp.MustCompile(`^mix`)
+		planned := regexp.MustCompile(`^plnd`)
 		resv := regexp.MustCompile(`^res`)
 		unknown := regexp.MustCompile(`^unknown`)
 		switch {
@@ -147,10 +159,14 @@ func ParsePartitionNodes(input string, pm *PartitionNodeMetrics, ignore []string
 			nodeErr[part]++
 		case idle.MatchString(state):
 			nodeIdle[part]++
+		case inval.MatchString(state):
+			nodeInval[part]++
 		case maint.MatchString(state):
 			nodeMaint[part]++
 		case mix.MatchString(state):
 			nodeMix[part]++
+		case planned.MatchString(state):
+			nodePlanned[part]++
 		case resv.MatchString(state):
 			nodeResv[part]++
 		case unknown.MatchString(state):
@@ -164,8 +180,10 @@ func ParsePartitionNodes(input string, pm *PartitionNodeMetrics, ignore []string
 	pm.nodeErr = nodeErr
 	pm.nodeFail = nodeFail
 	pm.nodeIdle = nodeIdle
+	pm.nodeInval = nodeInval
 	pm.nodeMaint = nodeMaint
 	pm.nodeMix = nodeMix
+	pm.nodePlanned = nodePlanned
 	pm.nodeResv = nodeResv
 	pm.nodeUnknown = nodeUnknown
 }
@@ -221,12 +239,18 @@ func NewPartitionNodesCollector(partitions []string, ignore []string, logger log
 		nodeIdle: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "nodes_idle"),
 			"Idle nodes", labels, nil),
+		nodeInval: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "partition", "nodes_inval"),
+			"Invalid nodes", labels, nil),
 		nodeMaint: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "nodes_maint"),
 			"Maint nodes", labels, nil),
 		nodeMix: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "nodes_mix"),
 			"Mix nodes", labels, nil),
+		nodePlanned: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "partition", "nodes_planned"),
+			"Planned used nodes", labels, nil),
 		nodeResv: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "partition", "nodes_resv"),
 			"Reserved nodes", labels, nil),
@@ -247,8 +271,10 @@ type PartitionNodesCollector struct {
 	nodeErr     *prometheus.Desc
 	nodeFail    *prometheus.Desc
 	nodeIdle    *prometheus.Desc
+	nodeInval   *prometheus.Desc
 	nodeMaint   *prometheus.Desc
 	nodeMix     *prometheus.Desc
+	nodePlanned *prometheus.Desc
 	nodeResv    *prometheus.Desc
 	nodeUnknown *prometheus.Desc
 	partitions  []string
@@ -265,8 +291,10 @@ func (pc *PartitionNodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- pc.nodeErr
 	ch <- pc.nodeFail
 	ch <- pc.nodeIdle
+	ch <- pc.nodeInval
 	ch <- pc.nodeMaint
 	ch <- pc.nodeMix
+	ch <- pc.nodePlanned
 	ch <- pc.nodeResv
 	ch <- pc.nodeUnknown
 }
@@ -299,11 +327,17 @@ func (pc *PartitionNodesCollector) Collect(ch chan<- prometheus.Metric) {
 	for partition, count := range pm.nodeIdle {
 		ch <- prometheus.MustNewConstMetric(pc.nodeIdle, prometheus.GaugeValue, count, partition)
 	}
+	for partition, count := range pm.nodeInval {
+		ch <- prometheus.MustNewConstMetric(pc.nodeInval, prometheus.GaugeValue, count, partition)
+	}
 	for partition, count := range pm.nodeMaint {
 		ch <- prometheus.MustNewConstMetric(pc.nodeMaint, prometheus.GaugeValue, count, partition)
 	}
 	for partition, count := range pm.nodeMix {
 		ch <- prometheus.MustNewConstMetric(pc.nodeMix, prometheus.GaugeValue, count, partition)
+	}
+	for partition, count := range pm.nodePlanned {
+		ch <- prometheus.MustNewConstMetric(pc.nodePlanned, prometheus.GaugeValue, count, partition)
 	}
 	for partition, count := range pm.nodeResv {
 		ch <- prometheus.MustNewConstMetric(pc.nodeResv, prometheus.GaugeValue, count, partition)

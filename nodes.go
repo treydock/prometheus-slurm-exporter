@@ -46,8 +46,10 @@ type NodesMetrics struct {
 	err            float64
 	fail           float64
 	idle           float64
+	inval          float64
 	maint          float64
 	mix            float64
+	planned        float64
 	resv           float64
 	unknown        float64
 	total          float64
@@ -114,8 +116,10 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			fail := regexp.MustCompile(`^fail`)
 			err := regexp.MustCompile(`^err`)
 			idle := regexp.MustCompile(`^idle`)
+			inval := regexp.MustCompile(`^inval`)
 			maint := regexp.MustCompile(`^maint`)
 			mix := regexp.MustCompile(`^mix`)
+			planned := regexp.MustCompile(`^plnd`)
 			resv := regexp.MustCompile(`^res`)
 			unknown := regexp.MustCompile(`^unknown`)
 			nm.total++
@@ -134,16 +138,20 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 				nm.err++
 			case idle.MatchString(state) == true:
 				nm.idle++
+			case inval.MatchString(state) == true:
+				nm.inval++
 			case maint.MatchString(state) == true:
 				nm.maint++
 			case mix.MatchString(state) == true:
 				nm.mix++
+			case planned.MatchString(state) == true:
+				nm.planned++
 			case resv.MatchString(state) == true:
 				nm.resv++
 			case unknown.MatchString(state):
 				nm.unknown++
 			}
-			if strings.HasSuffix(state, "*") || down.MatchString(state) || drain.MatchString(state) || fail.MatchString(state) {
+			if strings.HasSuffix(state, "*") || down.MatchString(state) || drain.MatchString(state) || inval.MatchString(state) || fail.MatchString(state) {
 				nodeDown[node] = 1
 			} else {
 				nodeDown[node] = 0
@@ -210,8 +218,10 @@ func NewNodesCollector(logger log.Logger) *NodesCollector {
 		err:          prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
 		fail:         prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
 		idle:         prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
+		inval:        prometheus.NewDesc("slurm_nodes_inval", "Invalid nodes", nil, nil),
 		maint:        prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
 		mix:          prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
+		planned:      prometheus.NewDesc("slurm_nodes_planned", "Planned used nodes", nil, nil),
 		resv:         prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
 		unknown:      prometheus.NewDesc("slurm_nodes_unknown", "Unknown state nodes", nil, nil),
 		total:        prometheus.NewDesc("slurm_nodes_total", "Total nodes", nil, nil),
@@ -231,8 +241,10 @@ type NodesCollector struct {
 	err          *prometheus.Desc
 	fail         *prometheus.Desc
 	idle         *prometheus.Desc
+	inval        *prometheus.Desc
 	maint        *prometheus.Desc
 	mix          *prometheus.Desc
+	planned      *prometheus.Desc
 	resv         *prometheus.Desc
 	unknown      *prometheus.Desc
 	total        *prometheus.Desc
@@ -252,8 +264,10 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.err
 	ch <- nc.fail
 	ch <- nc.idle
+	ch <- nc.inval
 	ch <- nc.maint
 	ch <- nc.mix
+	ch <- nc.planned
 	ch <- nc.resv
 	ch <- nc.unknown
 	ch <- nc.total
@@ -277,8 +291,10 @@ func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(nc.err, prometheus.GaugeValue, nm.err)
 	ch <- prometheus.MustNewConstMetric(nc.fail, prometheus.GaugeValue, nm.fail)
 	ch <- prometheus.MustNewConstMetric(nc.idle, prometheus.GaugeValue, nm.idle)
+	ch <- prometheus.MustNewConstMetric(nc.inval, prometheus.GaugeValue, nm.inval)
 	ch <- prometheus.MustNewConstMetric(nc.maint, prometheus.GaugeValue, nm.maint)
 	ch <- prometheus.MustNewConstMetric(nc.mix, prometheus.GaugeValue, nm.mix)
+	ch <- prometheus.MustNewConstMetric(nc.planned, prometheus.GaugeValue, nm.planned)
 	ch <- prometheus.MustNewConstMetric(nc.resv, prometheus.GaugeValue, nm.resv)
 	ch <- prometheus.MustNewConstMetric(nc.unknown, prometheus.GaugeValue, nm.unknown)
 	ch <- prometheus.MustNewConstMetric(nc.total, prometheus.GaugeValue, nm.total)
