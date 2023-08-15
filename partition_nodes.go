@@ -141,7 +141,7 @@ func ParsePartitionNodes(input string, pm *PartitionNodeMetrics, ignore []string
 		inval := regexp.MustCompile(`^inval`)
 		maint := regexp.MustCompile(`^maint`)
 		mix := regexp.MustCompile(`^mix`)
-		planned := regexp.MustCompile(`^plnd`)
+		planned := regexp.MustCompile(`^plan`)
 		resv := regexp.MustCompile(`^res`)
 		unknown := regexp.MustCompile(`^unknown`)
 		switch {

@@ -119,7 +119,7 @@ func ParseNodesMetrics(input string) *NodesMetrics {
 			inval := regexp.MustCompile(`^inval`)
 			maint := regexp.MustCompile(`^maint`)
 			mix := regexp.MustCompile(`^mix`)
-			planned := regexp.MustCompile(`^plnd`)
+			planned := regexp.MustCompile(`^plan`)
 			resv := regexp.MustCompile(`^res`)
 			unknown := regexp.MustCompile(`^unknown`)
 			nm.total++
