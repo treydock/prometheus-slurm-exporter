@@ -65,6 +65,9 @@ func ParseLicenseMetrics(input string, logger log.Logger) []LicenseMetrics {
 			if key == "Remote" {
 				continue
 			}
+			if key == "LastUpdate" {
+				continue
+			}
 			var value float64
 			var err error
 			if key != "LicenseName" {
