@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ type QueueMetrics struct {
 	suspended       float64
 	cancelled       float64
 	completing      float64
+	completing_long float64
 	completed       float64
 	configuring     float64
 	failed          float64
@@ -50,11 +52,13 @@ func QueueGetMetrics(logger log.Logger) (*QueueMetrics, error) {
 	if err != nil {
 		return &QueueMetrics{}, err
 	}
-	return ParseQueueMetrics(data), nil
+	metrics, err := ParseQueueMetrics(logger, data)
+	return metrics, err
 }
 
-func ParseQueueMetrics(input string) *QueueMetrics {
+func ParseQueueMetrics(logger log.Logger, input string) (*QueueMetrics, error) {
 	var qm QueueMetrics
+	var errors bool
 	pr := make(map[string]float64)
 	lines := strings.Split(string(input), "\n")
 	for _, line := range lines {
@@ -79,6 +83,18 @@ func ParseQueueMetrics(input string) *QueueMetrics {
 				qm.cancelled++
 			case "COMPLETING":
 				qm.completing++
+				if splitted[3] == "N/A" {
+					continue
+				}
+				// Parse time like 2026-05-25T09:01:04
+				t, err := time.ParseInLocation("2006-01-02T15:04:05", splitted[3], time.Local)
+				if err != nil {
+					level.Error(logger).Log("msg", "Error parsing time", "time", splitted[3])
+					errors = true
+				}
+				if time.Since(t) >= *completingTime {
+					qm.completing_long++
+				}
 			case "COMPLETED":
 				qm.completed++
 			case "CONFIGURING":
@@ -95,14 +111,18 @@ func ParseQueueMetrics(input string) *QueueMetrics {
 		}
 	}
 	qm.pending_reasons = pr
-	return &qm
+	var err error
+	if errors {
+		err = fmt.Errorf("errors parsing queue output")
+	}
+	return &qm, err
 }
 
 // Execute the squeue command and return its output
 func QueueData(logger log.Logger) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*collectorTimeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "squeue", "-a", "-r", "-h", "-o %A,%T,%r", "--states=all")
+	cmd := exec.CommandContext(ctx, "squeue", "-a", "-r", "-h", "-o %A,%T,%r,%e", "--states=all")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -135,6 +155,7 @@ func NewQueueCollector(logger log.Logger) *QueueCollector {
 		suspended:       prometheus.NewDesc("slurm_queue_suspended", "Suspended jobs in the cluster", nil, nil),
 		cancelled:       prometheus.NewDesc("slurm_queue_cancelled", "Cancelled jobs in the cluster", nil, nil),
 		completing:      prometheus.NewDesc("slurm_queue_completing", "Completing jobs in the cluster", nil, nil),
+		completing_long: prometheus.NewDesc("slurm_queue_completing_long", "Completing jobs in the cluster with long completing time", nil, nil),
 		completed:       prometheus.NewDesc("slurm_queue_completed", "Completed jobs in the cluster", nil, nil),
 		configuring:     prometheus.NewDesc("slurm_queue_configuring", "Configuring jobs in the cluster", nil, nil),
 		failed:          prometheus.NewDesc("slurm_queue_failed", "Number of failed jobs", nil, nil),
@@ -154,6 +175,7 @@ type QueueCollector struct {
 	suspended       *prometheus.Desc
 	cancelled       *prometheus.Desc
 	completing      *prometheus.Desc
+	completing_long *prometheus.Desc
 	completed       *prometheus.Desc
 	configuring     *prometheus.Desc
 	failed          *prometheus.Desc
@@ -172,6 +194,7 @@ func (qc *QueueCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- qc.suspended
 	ch <- qc.cancelled
 	ch <- qc.completing
+	ch <- qc.completing_long
 	ch <- qc.completed
 	ch <- qc.configuring
 	ch <- qc.failed
@@ -199,6 +222,7 @@ func (qc *QueueCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(qc.suspended, prometheus.GaugeValue, qm.suspended)
 	ch <- prometheus.MustNewConstMetric(qc.cancelled, prometheus.GaugeValue, qm.cancelled)
 	ch <- prometheus.MustNewConstMetric(qc.completing, prometheus.GaugeValue, qm.completing)
+	ch <- prometheus.MustNewConstMetric(qc.completing_long, prometheus.GaugeValue, qm.completing_long)
 	ch <- prometheus.MustNewConstMetric(qc.completed, prometheus.GaugeValue, qm.completed)
 	ch <- prometheus.MustNewConstMetric(qc.configuring, prometheus.GaugeValue, qm.configuring)
 	ch <- prometheus.MustNewConstMetric(qc.failed, prometheus.GaugeValue, qm.failed)

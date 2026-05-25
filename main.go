@@ -72,6 +72,8 @@ var (
 		"Enable the partition collector").Default("false").Bool()
 	ignorePartitions = kingpin.Flag("collector.partition.ignore",
 		"Comma separated list of partitions to ignore").Default("").String()
+	completingTime = kingpin.Flag("collector.queue.completing.time",
+		"Time set for long completed job collection").Default("30m").Duration()
 	collectError = prometheus.NewDesc("slurm_exporter_collect_error",
 		"Indicates if an error has occurred during collection", []string{"collector"}, nil)
 	collecTimeout = prometheus.NewDesc("slurm_exporter_collect_timeout",

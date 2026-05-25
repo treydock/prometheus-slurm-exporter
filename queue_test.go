@@ -31,7 +31,13 @@ func TestParseQueueMetrics(t *testing.T) {
 		t.Fatalf("Can not open test data: %v", err)
 	}
 	data, err := ioutil.ReadAll(file)
-	t.Logf("%+v", ParseQueueMetrics(string(data)))
+	w := log.NewSyncWriter(os.Stderr)
+	logger := log.NewLogfmtLogger(w)
+	metrics, err := ParseQueueMetrics(logger, string(data))
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("%+v", metrics)
 }
 
 func TestQueueGetMetrics(t *testing.T) {
